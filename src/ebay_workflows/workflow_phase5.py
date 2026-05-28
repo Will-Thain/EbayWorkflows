@@ -31,6 +31,38 @@ def _load_mock_ocr(path: str) -> list[dict[str, Any]]:
     return payload
 
 
+def _extract_title_from_image(local_path: str) -> tuple[str | None, float]:
+    image_path = Path(local_path)
+    if not image_path.exists():
+        return None, 0.0
+
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import pytesseract  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - depends on local runtime
+        raise RuntimeError(
+            "Real OCR mode requires opencv-python and pytesseract to be installed."
+        ) from exc
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return None, 0.0
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    text = pytesseract.image_to_string(thresh, config="--psm 6").strip()
+    if not text:
+        return None, 0.0
+
+    # Use first non-empty line as a simple title approximation for MVP.
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if not first_line:
+        return None, 0.0
+    confidence = min(0.95, max(0.4, len(first_line) / 40))
+    return first_line, confidence
+
+
 def _update_candidate_confidence(candidate: ListingCardCandidate, ocr_title: str) -> None:
     if not candidate.scryfall_card or not candidate.scryfall_card.name:
         return
@@ -55,11 +87,12 @@ def run_phase5_ocr_verification(
     session: Session,
     settings: Settings,
     mock_ocr_file: str | None = None,
+    use_real_ocr: bool = False,
 ) -> str:
     run = WorkflowRun(
         workflow_name=f"{settings.workflow_default_name}_phase5",
         status="running",
-        input_config_json={"mock_ocr_file": mock_ocr_file},
+        input_config_json={"mock_ocr_file": mock_ocr_file, "use_real_ocr": use_real_ocr},
         started_at=_now(),
     )
     session.add(run)
@@ -77,25 +110,33 @@ def run_phase5_ocr_verification(
     session.flush()
 
     try:
-        if not mock_ocr_file:
-            raise ValueError("Phase 5 currently requires --mock-ocr-file for deterministic verification.")
-        mock_rows = _load_mock_ocr(mock_ocr_file)
-
         listing_images = session.execute(select(ListingImage)).scalars().all()
-        by_source_url = {row.source_url: row for row in listing_images}
         detections_created = 0
         ocr_rows_created = 0
         candidates_updated = 0
 
-        for row in mock_rows:
-            source_url = row.get("source_url")
-            if not source_url:
-                continue
-            listing_image = by_source_url.get(source_url)
-            if not listing_image:
-                continue
+        def _process_title(
+            listing_image: ListingImage,
+            title: str,
+            confidence: float,
+            model_version: str,
+            engine_name: str,
+            engine_version: str,
+            set_code: str = "",
+            collector_number: str = "",
+        ) -> None:
+            nonlocal detections_created, ocr_rows_created, candidates_updated
 
-            session.execute(delete(ImageDetection).where(ImageDetection.listing_image_id == listing_image.id))
+            existing_detection_ids = session.execute(
+                select(ImageDetection.id).where(
+                    ImageDetection.listing_image_id == listing_image.id,
+                    ImageDetection.detection_type == "card_region",
+                )
+            ).scalars().all()
+            if existing_detection_ids:
+                session.execute(delete(OcrResult).where(OcrResult.detection_id.in_(existing_detection_ids)))
+                session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
+
             detection = ImageDetection(
                 listing_image_id=listing_image.id,
                 detection_type="card_region",
@@ -103,17 +144,12 @@ def run_phase5_ocr_verification(
                 bbox_y=0,
                 bbox_w=1,
                 bbox_h=1,
-                detection_score=1,
-                model_version="phase5_mock_v1",
+                detection_score=confidence,
+                model_version=model_version,
             )
             session.add(detection)
             session.flush()
             detections_created += 1
-
-            title = (row.get("title") or "").strip()
-            set_code = (row.get("set_code") or "").strip()
-            collector_number = (row.get("collector_number") or "").strip()
-            confidence = float(row.get("confidence", 0.9))
 
             if title:
                 session.add(
@@ -123,8 +159,8 @@ def run_phase5_ocr_verification(
                         raw_text=title,
                         normalized_text=title.lower(),
                         confidence_score=confidence,
-                        engine_name="mock",
-                        engine_version="v1",
+                        engine_name=engine_name,
+                        engine_version=engine_version,
                         region_image_path=listing_image.local_path,
                     )
                 )
@@ -137,8 +173,8 @@ def run_phase5_ocr_verification(
                         raw_text=set_code,
                         normalized_text=set_code.lower(),
                         confidence_score=confidence,
-                        engine_name="mock",
-                        engine_version="v1",
+                        engine_name=engine_name,
+                        engine_version=engine_version,
                         region_image_path=listing_image.local_path,
                     )
                 )
@@ -151,8 +187,8 @@ def run_phase5_ocr_verification(
                         raw_text=collector_number,
                         normalized_text=collector_number.lower(),
                         confidence_score=confidence,
-                        engine_name="mock",
-                        engine_version="v1",
+                        engine_name=engine_name,
+                        engine_version=engine_version,
                         region_image_path=listing_image.local_path,
                     )
                 )
@@ -165,6 +201,44 @@ def run_phase5_ocr_verification(
                 for candidate in candidates:
                     _update_candidate_confidence(candidate, title)
                     candidates_updated += 1
+
+        if mock_ocr_file:
+            mock_rows = _load_mock_ocr(mock_ocr_file)
+            by_source_url = {row.source_url: row for row in listing_images}
+            for row in mock_rows:
+                source_url = row.get("source_url")
+                if not source_url:
+                    continue
+                listing_image = by_source_url.get(source_url)
+                if not listing_image:
+                    continue
+                _process_title(
+                    listing_image=listing_image,
+                    title=(row.get("title") or "").strip(),
+                    confidence=float(row.get("confidence", 0.9)),
+                    model_version="phase5_mock_v1",
+                    engine_name="mock",
+                    engine_version="v1",
+                    set_code=(row.get("set_code") or "").strip(),
+                    collector_number=(row.get("collector_number") or "").strip(),
+                )
+        elif use_real_ocr:
+            for listing_image in listing_images:
+                if not listing_image.local_path:
+                    continue
+                title, confidence = _extract_title_from_image(listing_image.local_path)
+                if not title:
+                    continue
+                _process_title(
+                    listing_image=listing_image,
+                    title=title,
+                    confidence=confidence,
+                    model_version="phase5_real_ocr_v1",
+                    engine_name="pytesseract",
+                    engine_version="v1",
+                )
+        else:
+            raise ValueError("Provide --mock-ocr-file or enable --use-real-ocr.")
 
         step.status = "succeeded"
         step.finished_at = _now()
