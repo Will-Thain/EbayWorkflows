@@ -34,6 +34,8 @@
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
 17. run bulk-lot multi-card detection:
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
+18. run post-MVP integrity checks:
+   `ebay-workflows data-integrity-check`
 
 ## First Execution
 

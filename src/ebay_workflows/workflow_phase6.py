@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from rapidfuzz import fuzz
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .config import Settings
@@ -110,6 +110,21 @@ def run_phase6_bulk_lot_detection(
             listing = listing_by_id.get(listing_image.listing_id)
             if not listing:
                 continue
+
+            # Keep reruns idempotent by replacing prior lot detections for this image.
+            previous_lot_detection_ids = session.execute(
+                select(ImageDetection.id).where(
+                    ImageDetection.listing_image_id == listing_image.id,
+                    ImageDetection.detection_type == "lot_card",
+                )
+            ).scalars().all()
+            if previous_lot_detection_ids:
+                session.execute(
+                    delete(OcrResult).where(OcrResult.detection_id.in_(previous_lot_detection_ids))
+                )
+                session.execute(
+                    delete(ImageDetection).where(ImageDetection.id.in_(previous_lot_detection_ids))
+                )
 
             detected_cards = lot.get("detected_cards") or []
             lot_total = Decimal("0")
