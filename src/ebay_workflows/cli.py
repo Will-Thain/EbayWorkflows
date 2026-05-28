@@ -12,6 +12,7 @@ from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.scryfall import sync_scryfall_bulk
 from .models import Base
+from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
 from .workflow_phase1 import run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
@@ -286,6 +287,77 @@ def data_integrity_check() -> None:
         "[bold green]Integrity checks passed.[/bold green] "
         f"Checks run: [cyan]{report.checks_run}[/cyan]"
     )
+
+
+@app.command("run-resumable-pipeline")
+def run_resumable_pipeline_cmd(
+    query: str = typer.Option("mtg lot", "--query", help="Search query for phase 1 ingestion"),
+    max_pages: int = typer.Option(1, "--max-pages", help="Max pages to fetch in phase 1"),
+    mock_input_file: str | None = typer.Option(
+        None,
+        "--mock-input-file",
+        help="Path to JSON file for phase 1 offline ingestion",
+    ),
+    download_images: bool = typer.Option(
+        False,
+        "--download-images/--no-download-images",
+        help="Download listing images in phase 1",
+    ),
+    top_k: int = typer.Option(3, "--top-k", help="Top candidate cards retained in phase 2"),
+    mock_ocr_file: str | None = typer.Option(
+        None,
+        "--mock-ocr-file",
+        help="Mock OCR file used by phase 5",
+    ),
+    use_real_ocr: bool = typer.Option(
+        False,
+        "--use-real-ocr/--no-use-real-ocr",
+        help="Use real OCR for phase 5 when no mock OCR file is provided",
+    ),
+    mock_lot_file: str | None = typer.Option(
+        None,
+        "--mock-lot-file",
+        help="Mock lot detection file used by phase 6",
+    ),
+    from_phase: int = typer.Option(1, "--from-phase", min=1, max=6, help="First phase to execute"),
+    to_phase: int = typer.Option(6, "--to-phase", min=1, max=6, help="Last phase to execute"),
+    resume: bool = typer.Option(
+        True,
+        "--resume/--no-resume",
+        help="Skip already-complete phases based on persisted data",
+    ),
+) -> None:
+    """Run phases 1-6 with replay/resume safety and phase skipping."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot start resumable pipeline:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    cfg = ResumablePipelineConfig(
+        query=query,
+        max_pages=max_pages,
+        mock_input_file=mock_input_file,
+        download_images=download_images,
+        top_k=top_k,
+        mock_ocr_file=mock_ocr_file,
+        use_real_ocr=use_real_ocr,
+        mock_lot_file=mock_lot_file,
+        from_phase=from_phase,
+        to_phase=to_phase,
+        resume=resume,
+    )
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        summary = run_resumable_pipeline(session, settings, cfg)
+
+    table = Table(title="Resumable Pipeline Result")
+    table.add_column("Type", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Executed", str(summary.get("executed", {})))
+    table.add_row("Skipped phases", str(summary.get("skipped", [])))
+    console.print(table)
 
 
 if __name__ == "__main__":

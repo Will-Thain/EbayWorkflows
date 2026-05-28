@@ -42,6 +42,8 @@
    `ruff check .`
    `python -m compileall src`
    `pytest -q`
+20. run resumable full pipeline (skips completed phases by default):
+   `ebay-workflows run-resumable-pipeline --query "mtg lot" --mock-input-file "samples/mock_listings.json" --mock-ocr-file "samples/mock_ocr_results.json" --mock-lot-file "samples/mock_lot_detections.json"`
 
 ## First Execution
 
