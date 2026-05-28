@@ -209,9 +209,14 @@ def phase4_rank() -> None:
 @app.command("phase5-verify-ocr")
 def phase5_verify_ocr(
     mock_ocr_file: str = typer.Option(
-        ...,
+        None,
         "--mock-ocr-file",
         help="Path to JSON mock OCR evidence file for deterministic verification",
+    ),
+    use_real_ocr: bool = typer.Option(
+        False,
+        "--use-real-ocr/--no-use-real-ocr",
+        help="Use OpenCV + Tesseract OCR from local image files when no mock file is supplied",
     ),
 ) -> None:
     """Run Milestone 5 OCR verification to refine candidate confidence."""
@@ -223,7 +228,12 @@ def phase5_verify_ocr(
 
     session_factory = build_session_factory(settings)
     with session_factory() as session:
-        run_id = run_phase5_ocr_verification(session, settings, mock_ocr_file=mock_ocr_file)
+        run_id = run_phase5_ocr_verification(
+            session,
+            settings,
+            mock_ocr_file=mock_ocr_file,
+            use_real_ocr=use_real_ocr,
+        )
     console.print("[bold green]Phase 5 OCR verification completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 

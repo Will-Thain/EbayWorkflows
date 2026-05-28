@@ -32,6 +32,8 @@
    `ebay-workflows phase4-rank`
 16. run OCR verification (mock evidence):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
+    or run real OCR from cached local images:
+   `ebay-workflows phase5-verify-ocr --use-real-ocr`
 17. run bulk-lot multi-card detection:
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
 18. run post-MVP integrity checks:
