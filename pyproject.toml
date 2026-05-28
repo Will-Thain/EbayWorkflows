@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ebay-workflows"
+version = "0.1.0"
+description = "Local CLI workflows for MTG eBay listing analysis."
+readme = "docs/README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic",
+  "faiss-cpu",
+  "httpx",
+  "open-clip-torch",
+  "opencv-python",
+  "paddleocr",
+  "psycopg[binary]",
+  "pydantic>=2",
+  "pydantic-settings",
+  "pytesseract",
+  "rapidfuzz",
+  "rich",
+  "sqlalchemy",
+  "structlog",
+  "tenacity",
+  "torch",
+  "typer",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[project.scripts]
+ebay-workflows = "ebay_workflows.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]

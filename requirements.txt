@@ -1,0 +1,17 @@
+alembic
+faiss-cpu
+httpx
+open-clip-torch
+opencv-python
+paddleocr
+psycopg[binary]
+pydantic>=2
+pydantic-settings
+pytesseract
+rapidfuzz
+rich
+sqlalchemy
+structlog
+tenacity
+torch
+typer
