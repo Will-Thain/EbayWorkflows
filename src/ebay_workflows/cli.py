@@ -8,10 +8,12 @@ from sqlalchemy.exc import OperationalError
 
 from .config import Settings
 from .db import build_engine, build_session_factory
+from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.scryfall import sync_scryfall_bulk
 from .models import Base
 from .workflow_phase1 import run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
+from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
 
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
@@ -149,6 +151,38 @@ def phase2_match_title(
         run_id = run_phase2_title_match(session, settings=settings, top_k=top_k)
 
     console.print("[bold green]Phase 2 title matching completed.[/bold green]")
+    console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("sync-cardmarket")
+def sync_cardmarket() -> None:
+    """Load Cardmarket bulk pricing file into card_prices table."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot sync Cardmarket:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    load_cardmarket_bulk_rows(settings.cardmarket_bulk_file_path)
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        count = sync_cardmarket_prices(session, settings)
+    console.print(f"[bold green]Cardmarket sync complete.[/bold green] Loaded [cyan]{count}[/cyan] prices.")
+
+
+@app.command("phase3-join-prices")
+def phase3_join_prices() -> None:
+    """Run Milestone 3 Cardmarket price join for matched candidates."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot start Phase 3:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        run_id = run_phase3_join(session, settings)
+    console.print("[bold green]Phase 3 price join completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
 

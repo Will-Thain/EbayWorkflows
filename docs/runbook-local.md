@@ -23,6 +23,11 @@
    `ebay-workflows sync-scryfall`
 11. run title-based matching:
    `ebay-workflows phase2-match-title --top-k 3`
+12. set `CARDMARKET_BULK_FILE_PATH=./samples/cardmarket_prices.csv` for local test data
+13. sync Cardmarket pricing:
+   `ebay-workflows sync-cardmarket`
+14. run Phase 3 price join:
+   `ebay-workflows phase3-join-prices`
 
 ## First Execution
 

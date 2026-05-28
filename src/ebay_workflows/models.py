@@ -101,6 +101,8 @@ class ScryfallCard(Base):
     raw_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
+    prices: Mapped[list["CardPrice"]] = relationship(back_populates="scryfall_card", cascade="all,delete-orphan")
+
 
 class ListingCardCandidate(Base):
     __tablename__ = "listing_card_candidates"
@@ -125,4 +127,33 @@ class ListingCardCandidate(Base):
 
     listing: Mapped[Listing] = relationship(back_populates="card_candidates")
     scryfall_card: Mapped[ScryfallCard | None] = relationship()
+
+
+class CardPrice(Base):
+    __tablename__ = "card_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "scryfall_id",
+            "price_type",
+            "condition",
+            "language",
+            "price_timestamp",
+            name="uq_card_price_snapshot",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="cardmarket")
+    scryfall_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("scryfall_cards.id"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="trend")
+    condition: Mapped[str | None] = mapped_column(String(32))
+    language: Mapped[str | None] = mapped_column(String(16))
+    price_amount: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    price_timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    scryfall_card: Mapped[ScryfallCard] = relationship(back_populates="prices")
 
