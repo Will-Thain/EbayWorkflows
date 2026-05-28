@@ -8,8 +8,10 @@ from sqlalchemy.exc import OperationalError
 
 from .config import Settings
 from .db import build_engine, build_session_factory
+from .integrations.scryfall import sync_scryfall_bulk
 from .models import Base
 from .workflow_phase1 import run_phase1
+from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
@@ -111,6 +113,43 @@ def init_db() -> None:
         console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
         raise typer.Exit(code=5) from exc
     console.print("[bold green]Database schema initialized.[/bold green]")
+
+
+@app.command("sync-scryfall")
+def sync_scryfall() -> None:
+    """Download and cache Scryfall bulk card data, then upsert DB records."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot sync Scryfall:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    cards = sync_scryfall_bulk(settings)
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        count = upsert_scryfall_cards(session, cards)
+    console.print(f"[bold green]Scryfall sync complete.[/bold green] Loaded [cyan]{count}[/cyan] cards.")
+
+
+@app.command("phase2-match-title")
+def phase2_match_title(
+    top_k: int = typer.Option(3, "--top-k", help="Top candidate cards retained per listing"),
+) -> None:
+    """Run Milestone 2 title-based listing to Scryfall matching."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot start Phase 2:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        # Ensure local cache is present and structured before matching.
+        load_cards_from_cache(settings)
+        run_id = run_phase2_title_match(session, settings=settings, top_k=top_k)
+
+    console.print("[bold green]Phase 2 title matching completed.[/bold green]")
+    console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
 
 if __name__ == "__main__":

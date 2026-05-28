@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     ebay_requests_per_minute: int | None = Field(default=None, alias="EBAY_REQUESTS_PER_MINUTE")
 
     scryfall_bulk_uri: str = Field(alias="SCRYFALL_BULK_URI")
+    scryfall_bulk_cache_path: str = Field(default="./data/scryfall/default-cards.json", alias="SCRYFALL_BULK_CACHE_PATH")
     scryfall_sync_interval_hours: int = Field(default=24, alias="SCRYFALL_SYNC_INTERVAL_HOURS")
     scryfall_requests_per_minute: int = Field(default=30, alias="SCRYFALL_REQUESTS_PER_MINUTE")
 

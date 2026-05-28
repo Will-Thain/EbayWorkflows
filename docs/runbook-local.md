@@ -19,6 +19,10 @@
 8. set `DISABLE_LIVE_API_WRITES=false` in `.env` for local persistence tests
 9. run Phase 1 locally with mock data:
    `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
+10. sync Scryfall bulk cards into DB:
+   `ebay-workflows sync-scryfall`
+11. run title-based matching:
+   `ebay-workflows phase2-match-title --top-k 3`
 
 ## First Execution
 
