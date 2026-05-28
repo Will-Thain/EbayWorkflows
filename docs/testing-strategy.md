@@ -12,6 +12,7 @@
 - integration tests for each connector with recorded fixtures
 - repository/migration tests for DB schema integrity
 - workflow orchestration tests for checkpoint/resume behavior
+- baseline pytest coverage for Phase 6 rerun idempotency and integrity-check outcomes
 
 ## API Safety Tests
 
