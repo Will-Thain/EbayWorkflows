@@ -85,6 +85,7 @@ class ListingImage(Base):
     error_json: Mapped[dict | None] = mapped_column(JSON)
 
     listing: Mapped[Listing] = relationship(back_populates="images")
+    detections: Mapped[list["ImageDetection"]] = relationship(back_populates="listing_image", cascade="all,delete-orphan")
 
 
 class ScryfallCard(Base):
@@ -174,4 +175,39 @@ class ListingScore(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     listing: Mapped[Listing] = relationship(back_populates="score")
+
+
+class ImageDetection(Base):
+    __tablename__ = "image_detections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_image_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("listing_images.id"), nullable=False)
+    detection_type: Mapped[str] = mapped_column(String(32), nullable=False, default="card_region")
+    bbox_x: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    bbox_y: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    bbox_w: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1)
+    bbox_h: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1)
+    detection_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False, default=1)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False, default="phase5_v1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing_image: Mapped[ListingImage] = relationship(back_populates="detections")
+    ocr_results: Mapped[list["OcrResult"]] = relationship(back_populates="detection", cascade="all,delete-orphan")
+
+
+class OcrResult(Base):
+    __tablename__ = "ocr_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    detection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("image_detections.id"), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str | None] = mapped_column(Text)
+    confidence_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False, default=0)
+    engine_name: Mapped[str] = mapped_column(String(64), nullable=False, default="pytesseract")
+    engine_version: Mapped[str | None] = mapped_column(String(64))
+    region_image_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    detection: Mapped[ImageDetection] = relationship(back_populates="ocr_results")
 

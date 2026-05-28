@@ -15,6 +15,7 @@ from .workflow_phase1 import run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
 from .workflow_phase4 import run_phase4_ranking
+from .workflow_phase5 import run_phase5_ocr_verification
 
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
@@ -200,6 +201,28 @@ def phase4_rank() -> None:
     with session_factory() as session:
         run_id = run_phase4_ranking(session, settings)
     console.print("[bold green]Phase 4 ranking completed.[/bold green]")
+    console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("phase5-verify-ocr")
+def phase5_verify_ocr(
+    mock_ocr_file: str = typer.Option(
+        ...,
+        "--mock-ocr-file",
+        help="Path to JSON mock OCR evidence file for deterministic verification",
+    ),
+) -> None:
+    """Run Milestone 5 OCR verification to refine candidate confidence."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot start Phase 5:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        run_id = run_phase5_ocr_verification(session, settings, mock_ocr_file=mock_ocr_file)
+    console.print("[bold green]Phase 5 OCR verification completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
 

@@ -30,6 +30,8 @@
    `ebay-workflows phase3-join-prices`
 15. run EV/confidence ranking:
    `ebay-workflows phase4-rank`
+16. run OCR verification (mock evidence):
+   `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
 
 ## First Execution
 
