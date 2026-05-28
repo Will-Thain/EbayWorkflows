@@ -5,6 +5,7 @@
 - verify deterministic workflow behavior across reruns
 - detect regressions in matching/scoring logic
 - prevent API misuse, permission overreach, and rate-limit violations
+- run automated lint and test checks on every PR to `main`
 
 ## Test Layers
 
@@ -13,6 +14,12 @@
 - repository/migration tests for DB schema integrity
 - workflow orchestration tests for checkpoint/resume behavior
 - baseline pytest coverage for Phase 6 rerun idempotency and integrity-check outcomes
+
+## CI Automation
+
+- GitHub Actions workflow at `.github/workflows/ci.yml`
+- gates: `ruff check .`, `python -m compileall src`, `pytest -q`
+- triggers on pushes to `main` and `milestone-*`, and PRs into `main`
 
 ## API Safety Tests
 

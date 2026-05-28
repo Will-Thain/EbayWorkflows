@@ -36,6 +36,10 @@
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
 18. run post-MVP integrity checks:
    `ebay-workflows data-integrity-check`
+19. run local quality gates before push:
+   `ruff check .`
+   `python -m compileall src`
+   `pytest -q`
 
 ## First Execution
 
