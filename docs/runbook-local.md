@@ -15,6 +15,10 @@
 4. run DB migrations
 5. run `ebay-workflows validate-env`
 6. run a dry-run workflow command to validate integration configuration
+7. initialize schema with `ebay-workflows init-db`
+8. set `DISABLE_LIVE_API_WRITES=false` in `.env` for local persistence tests
+9. run Phase 1 locally with mock data:
+   `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
 
 ## First Execution
 

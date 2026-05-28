@@ -1,0 +1,27 @@
+[
+  {
+    "external_listing_id": "v1|1234567890|0",
+    "title": "MTG Lightning Bolt M11 LP",
+    "listing_url": "https://www.ebay.co.uk/itm/1234567890",
+    "currency": "GBP",
+    "price_amount": 2.5,
+    "shipping_amount": 1.2,
+    "condition_text": "Used",
+    "image_urls": [
+      "https://example.com/images/card-front-1.jpg"
+    ]
+  },
+  {
+    "external_listing_id": "v1|2234567890|0",
+    "title": "MTG Sol Ring Commander Staples Lot",
+    "listing_url": "https://www.ebay.co.uk/itm/2234567890",
+    "currency": "GBP",
+    "price_amount": 9.99,
+    "shipping_amount": 2.95,
+    "condition_text": "Used",
+    "image_urls": [
+      "https://example.com/images/card-front-2.jpg",
+      "https://example.com/images/card-front-3.jpg"
+    ]
+  }
+]

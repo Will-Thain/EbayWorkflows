@@ -72,9 +72,13 @@ class Settings(BaseSettings):
         # Keep global cap conservative compared to per-provider aggregate.
         ebay_budget = self.ebay_requests_per_minute if self.enable_ebay_api and self.ebay_requests_per_minute else 0
         provider_sum = ebay_budget + self.scryfall_requests_per_minute
-        if self.global_requests_per_minute_cap > provider_sum:
+        if (
+            not self.disable_live_api_writes
+            and self.global_requests_per_minute_cap > provider_sum
+        ):
             raise ValueError(
-                "GLOBAL_REQUESTS_PER_MINUTE_CAP must be <= sum of active provider request-per-minute budgets"
+                "GLOBAL_REQUESTS_PER_MINUTE_CAP must be <= sum of active provider request-per-minute budgets "
+                "when live API writes are enabled"
             )
 
         if self.app_env.lower() != "local" and not self.enable_provider_policy_checks:
