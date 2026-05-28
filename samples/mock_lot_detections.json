@@ -1,0 +1,15 @@
+[
+  {
+    "source_url": "https://example.com/images/card-front-2.jpg",
+    "detected_cards": [
+      { "title": "Sol Ring", "quantity": 2, "confidence": 0.92 },
+      { "title": "Lightning Bolt", "quantity": 3, "confidence": 0.85 }
+    ]
+  },
+  {
+    "source_url": "https://example.com/images/card-front-3.jpg",
+    "detected_cards": [
+      { "title": "Lightning Bolt", "quantity": 1, "confidence": 0.80 }
+    ]
+  }
+]
