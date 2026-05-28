@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 
 from .config import Settings
 from .db import build_engine, build_session_factory
+from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.scryfall import sync_scryfall_bulk
 from .models import Base
@@ -247,6 +248,34 @@ def phase6_detect_lots(
         run_id = run_phase6_bulk_lot_detection(session, settings, mock_lot_file=mock_lot_file)
     console.print("[bold green]Phase 6 bulk-lot detection completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("data-integrity-check")
+def data_integrity_check() -> None:
+    """Run post-MVP data integrity checks for pipeline hardening."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot run integrity checks:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        report = run_data_integrity_checks(session)
+
+    if report.issues_found:
+        console.print(
+            f"[bold red]Integrity checks failed.[/bold red] "
+            f"Issues: [cyan]{report.issues_found}[/cyan] / Checks: [cyan]{report.checks_run}[/cyan]"
+        )
+        for issue in report.details:
+            console.print(f"- {issue}")
+        raise typer.Exit(code=6)
+
+    console.print(
+        "[bold green]Integrity checks passed.[/bold green] "
+        f"Checks run: [cyan]{report.checks_run}[/cyan]"
+    )
 
 
 if __name__ == "__main__":
