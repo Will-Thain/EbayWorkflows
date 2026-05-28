@@ -14,6 +14,7 @@ from .models import Base
 from .workflow_phase1 import run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
+from .workflow_phase4 import run_phase4_ranking
 
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
@@ -183,6 +184,22 @@ def phase3_join_prices() -> None:
     with session_factory() as session:
         run_id = run_phase3_join(session, settings)
     console.print("[bold green]Phase 3 price join completed.[/bold green]")
+    console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("phase4-rank")
+def phase4_rank() -> None:
+    """Run Milestone 4 EV/confidence scoring and ranking."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot start Phase 4:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        run_id = run_phase4_ranking(session, settings)
+    console.print("[bold green]Phase 4 ranking completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
 

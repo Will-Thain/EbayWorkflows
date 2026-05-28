@@ -68,6 +68,7 @@ class Listing(Base):
     card_candidates: Mapped[list["ListingCardCandidate"]] = relationship(
         back_populates="listing", cascade="all,delete-orphan"
     )
+    score: Mapped["ListingScore | None"] = relationship(back_populates="listing", cascade="all,delete-orphan")
 
 
 class ListingImage(Base):
@@ -156,4 +157,21 @@ class CardPrice(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     scryfall_card: Mapped[ScryfallCard] = relationship(back_populates="prices")
+
+
+class ListingScore(Base):
+    __tablename__ = "listing_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("listings.id"), nullable=False, unique=True)
+    ev_raw: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    ev_adjusted: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    risk_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    rank_value: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    scoring_version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    explanation_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing: Mapped[Listing] = relationship(back_populates="score")
 
