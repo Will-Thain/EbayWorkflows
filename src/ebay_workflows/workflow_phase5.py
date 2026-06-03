@@ -18,6 +18,8 @@ from .models import (
     WorkflowRun,
     WorkflowStep,
 )
+from .services.card_regions import CardRegion, detect_card_regions
+from .services.ocr_extract import extract_ocr_fields
 
 
 def _now() -> datetime:
@@ -31,36 +33,16 @@ def _load_mock_ocr(path: str) -> list[dict[str, Any]]:
     return payload
 
 
-def _extract_title_from_image(local_path: str) -> tuple[str | None, float]:
-    image_path = Path(local_path)
-    if not image_path.exists():
-        return None, 0.0
-
-    try:
-        import cv2  # type: ignore[import-not-found]
-        import pytesseract  # type: ignore[import-not-found]
-    except ImportError as exc:  # pragma: no cover - depends on local runtime
-        raise RuntimeError(
-            "Real OCR mode requires opencv-python and pytesseract to be installed."
-        ) from exc
-
-    image = cv2.imread(str(image_path))
-    if image is None:
-        return None, 0.0
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    text = pytesseract.image_to_string(thresh, config="--psm 6").strip()
-    if not text:
-        return None, 0.0
-
-    # Use first non-empty line as a simple title approximation for MVP.
-    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    if not first_line:
-        return None, 0.0
-    confidence = min(0.95, max(0.4, len(first_line) / 40))
-    return first_line, confidence
+def _clear_card_regions(session: Session, listing_image_id: Any) -> None:
+    existing_detection_ids = session.execute(
+        select(ImageDetection.id).where(
+            ImageDetection.listing_image_id == listing_image_id,
+            ImageDetection.detection_type == "card_region",
+        )
+    ).scalars().all()
+    if existing_detection_ids:
+        session.execute(delete(OcrResult).where(OcrResult.detection_id.in_(existing_detection_ids)))
+        session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
 
 
 def _update_candidate_confidence(candidate: ListingCardCandidate, ocr_title: str) -> None:
@@ -114,92 +96,120 @@ def run_phase5_ocr_verification(
         detections_created = 0
         ocr_rows_created = 0
         candidates_updated = 0
+        crop_dir = str(Path(settings.image_cache_dir) / "crops")
 
-        def _process_title(
+        def _persist_region_detection(
             listing_image: ListingImage,
-            title: str,
-            confidence: float,
+            region: CardRegion,
+            fields: dict[str, tuple[str, float]],
+            *,
             model_version: str,
             engine_name: str,
             engine_version: str,
-            set_code: str = "",
-            collector_number: str = "",
-        ) -> None:
-            nonlocal detections_created, ocr_rows_created, candidates_updated
-
-            existing_detection_ids = session.execute(
-                select(ImageDetection.id).where(
-                    ImageDetection.listing_image_id == listing_image.id,
-                    ImageDetection.detection_type == "card_region",
-                )
-            ).scalars().all()
-            if existing_detection_ids:
-                session.execute(delete(OcrResult).where(OcrResult.detection_id.in_(existing_detection_ids)))
-                session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
-
+        ) -> str | None:
+            nonlocal detections_created, ocr_rows_created
             detection = ImageDetection(
                 listing_image_id=listing_image.id,
                 detection_type="card_region",
-                bbox_x=0,
-                bbox_y=0,
-                bbox_w=1,
-                bbox_h=1,
-                detection_score=confidence,
+                bbox_x=region.bbox_x,
+                bbox_y=region.bbox_y,
+                bbox_w=region.bbox_w,
+                bbox_h=region.bbox_h,
+                detection_score=region.score,
                 model_version=model_version,
             )
             session.add(detection)
             session.flush()
             detections_created += 1
 
-            if title:
+            region_path = region.crop_path or listing_image.local_path
+            best_title: str | None = None
+            for field_type, (raw_text, confidence) in fields.items():
                 session.add(
                     OcrResult(
                         detection_id=detection.id,
-                        field_type="title",
-                        raw_text=title,
-                        normalized_text=title.lower(),
+                        field_type=field_type,
+                        raw_text=raw_text,
+                        normalized_text=raw_text.lower(),
                         confidence_score=confidence,
                         engine_name=engine_name,
                         engine_version=engine_version,
-                        region_image_path=listing_image.local_path,
+                        region_image_path=region_path,
                     )
                 )
                 ocr_rows_created += 1
-            if set_code:
-                session.add(
-                    OcrResult(
-                        detection_id=detection.id,
-                        field_type="set_code",
-                        raw_text=set_code,
-                        normalized_text=set_code.lower(),
-                        confidence_score=confidence,
-                        engine_name=engine_name,
-                        engine_version=engine_version,
-                        region_image_path=listing_image.local_path,
-                    )
-                )
-                ocr_rows_created += 1
-            if collector_number:
-                session.add(
-                    OcrResult(
-                        detection_id=detection.id,
-                        field_type="collector_number",
-                        raw_text=collector_number,
-                        normalized_text=collector_number.lower(),
-                        confidence_score=confidence,
-                        engine_name=engine_name,
-                        engine_version=engine_version,
-                        region_image_path=listing_image.local_path,
-                    )
-                )
-                ocr_rows_created += 1
+                if field_type == "title":
+                    best_title = raw_text
+            return best_title
 
+        def _process_mock_row(listing_image: ListingImage, row: dict[str, Any]) -> None:
+            nonlocal candidates_updated
+            _clear_card_regions(session, listing_image.id)
+            fields: dict[str, tuple[str, float]] = {}
+            title = (row.get("title") or "").strip()
+            confidence = float(row.get("confidence", 0.9))
             if title:
+                fields["title"] = (title, confidence)
+            set_code = (row.get("set_code") or "").strip()
+            if set_code:
+                fields["set_code"] = (set_code, confidence)
+            collector_number = (row.get("collector_number") or "").strip()
+            if collector_number:
+                fields["collector_number"] = (collector_number, confidence)
+
+            region = CardRegion(0, 0, 1, 1, confidence, listing_image.local_path)
+            best_title = _persist_region_detection(
+                listing_image,
+                region,
+                fields,
+                model_version="phase5_mock_v1",
+                engine_name="mock",
+                engine_version="v1",
+            )
+            if best_title:
                 candidates = session.execute(
                     select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
                 ).scalars().all()
                 for candidate in candidates:
-                    _update_candidate_confidence(candidate, title)
+                    _update_candidate_confidence(candidate, best_title)
+                    candidates_updated += 1
+
+        def _process_real_image(listing_image: ListingImage) -> None:
+            nonlocal candidates_updated
+            if not listing_image.local_path:
+                return
+            _clear_card_regions(session, listing_image.id)
+            regions = detect_card_regions(listing_image.local_path, crop_dir)
+            if not regions:
+                return
+
+            best_title: str | None = None
+            best_confidence = 0.0
+            for region in regions:
+                crop_path = region.crop_path or listing_image.local_path
+                fields = extract_ocr_fields(crop_path, engine=settings.ocr_engine)
+                if not fields:
+                    continue
+                title = _persist_region_detection(
+                    listing_image,
+                    region,
+                    fields,
+                    model_version="phase5_region_ocr_v2",
+                    engine_name=settings.ocr_engine,
+                    engine_version="v2",
+                )
+                if title:
+                    title_conf = fields.get("title", (title, 0.0))[1]
+                    if title_conf >= best_confidence:
+                        best_confidence = title_conf
+                        best_title = title
+
+            if best_title:
+                candidates = session.execute(
+                    select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
+                ).scalars().all()
+                for candidate in candidates:
+                    _update_candidate_confidence(candidate, best_title)
                     candidates_updated += 1
 
         if mock_ocr_file:
@@ -212,31 +222,10 @@ def run_phase5_ocr_verification(
                 listing_image = by_source_url.get(source_url)
                 if not listing_image:
                     continue
-                _process_title(
-                    listing_image=listing_image,
-                    title=(row.get("title") or "").strip(),
-                    confidence=float(row.get("confidence", 0.9)),
-                    model_version="phase5_mock_v1",
-                    engine_name="mock",
-                    engine_version="v1",
-                    set_code=(row.get("set_code") or "").strip(),
-                    collector_number=(row.get("collector_number") or "").strip(),
-                )
+                _process_mock_row(listing_image, row)
         elif use_real_ocr:
             for listing_image in listing_images:
-                if not listing_image.local_path:
-                    continue
-                title, confidence = _extract_title_from_image(listing_image.local_path)
-                if not title:
-                    continue
-                _process_title(
-                    listing_image=listing_image,
-                    title=title,
-                    confidence=confidence,
-                    model_version="phase5_real_ocr_v1",
-                    engine_name="pytesseract",
-                    engine_version="v1",
-                )
+                _process_real_image(listing_image)
         else:
             raise ValueError("Provide --mock-ocr-file or enable --use-real-ocr.")
 
@@ -260,4 +249,3 @@ def run_phase5_ocr_verification(
         raise
 
     return str(run.id)
-

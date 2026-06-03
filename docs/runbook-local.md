@@ -14,7 +14,11 @@
 3. set required environment variables from `.env.example`
 4. run DB migrations
 5. run `ebay-workflows validate-env`
-6. run a dry-run workflow command to validate integration configuration
+6. verify eBay OAuth (production keys by default):
+   `ebay-workflows ebay-auth-check`
+   - use sandbox keys with `EBAY_USE_SANDBOX=true` in `.env`
+   - map **App ID (Client ID)** → `EBAY_CLIENT_ID` and **Client Secret** → `EBAY_CLIENT_SECRET` (not Cert ID)
+7. run a dry-run workflow command to validate integration configuration
 7. initialize schema with `ebay-workflows init-db`
 8. set `DISABLE_LIVE_API_WRITES=false` in `.env` for local persistence tests
 9. run Phase 1 locally with mock data:
@@ -32,8 +36,10 @@
    `ebay-workflows phase4-rank`
 16. run OCR verification (mock evidence):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
-    or run real OCR from cached local images:
+    or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
    `ebay-workflows phase5-verify-ocr --use-real-ocr`
+   - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
+   - crops saved under `IMAGE_CACHE_DIR/crops`
 17. run bulk-lot multi-card detection:
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
 18. run post-MVP integrity checks:

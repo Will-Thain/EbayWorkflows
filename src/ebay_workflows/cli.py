@@ -10,6 +10,7 @@ from .config import Settings
 from .db import build_engine, build_session_factory
 from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
+from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
@@ -45,6 +46,7 @@ def validate_env() -> None:
     table.add_row("APP_ENV", settings.app_env)
     table.add_row("BASE_CURRENCY", settings.base_currency)
     table.add_row("ENABLE_EBAY_API", str(settings.enable_ebay_api))
+    table.add_row("EBAY_USE_SANDBOX", str(settings.ebay_use_sandbox))
     table.add_row("EBAY_REQUESTS_PER_MINUTE", str(settings.ebay_requests_per_minute or "n/a"))
     table.add_row("SCRYFALL_REQUESTS_PER_MINUTE", str(settings.scryfall_requests_per_minute))
     table.add_row("CARDMARKET_BULK_FILE_PATH", settings.cardmarket_bulk_file_path)
@@ -102,6 +104,26 @@ def run_workflow(
         )
     console.print("[bold green]Phase 1 completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("ebay-auth-check")
+def ebay_auth_check() -> None:
+    """Verify eBay OAuth credentials without running ingestion."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot verify eBay auth:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    try:
+        token = verify_ebay_credentials(settings)
+    except ValueError as exc:
+        console.print(f"[bold red]eBay authentication failed:[/bold red] {exc}")
+        raise typer.Exit(code=7) from exc
+
+    env_label = "sandbox" if settings.ebay_use_sandbox else "production"
+    console.print(f"[bold green]eBay OAuth succeeded[/bold green] ({env_label}).")
+    console.print(f"Token prefix: [cyan]{token[:12]}...[/cyan]")
 
 
 @app.command("init-db")

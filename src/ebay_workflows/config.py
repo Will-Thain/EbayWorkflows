@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     enable_ebay_api: bool = Field(default=True, alias="ENABLE_EBAY_API")
     ebay_client_id: str | None = Field(default=None, alias="EBAY_CLIENT_ID")
     ebay_client_secret: str | None = Field(default=None, alias="EBAY_CLIENT_SECRET")
+    ebay_use_sandbox: bool = Field(default=False, alias="EBAY_USE_SANDBOX")
     ebay_marketplace_id: str = Field(default="EBAY_GB", alias="EBAY_MARKETPLACE_ID")
     ebay_page_size: int = Field(default=50, alias="EBAY_PAGE_SIZE")
     ebay_max_pages_per_run: int = Field(default=20, alias="EBAY_MAX_PAGES_PER_RUN")
@@ -65,6 +66,10 @@ class Settings(BaseSettings):
             raise ValueError("DB_POOL_MIN cannot be greater than DB_POOL_MAX")
 
         if self.enable_ebay_api:
+            if self.ebay_client_id is not None:
+                self.ebay_client_id = self.ebay_client_id.strip()
+            if self.ebay_client_secret is not None:
+                self.ebay_client_secret = self.ebay_client_secret.strip()
             if not self.ebay_client_id or not self.ebay_client_secret:
                 raise ValueError("EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required when ENABLE_EBAY_API=true")
             if self.ebay_requests_per_minute is None or self.ebay_requests_per_minute <= 0:
