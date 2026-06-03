@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     image_download_timeout_ms: int = Field(default=20000, alias="IMAGE_DOWNLOAD_TIMEOUT_MS")
     ocr_engine: str = Field(default="paddleocr", alias="OCR_ENGINE")
     faiss_index_path: str = Field(alias="FAISS_INDEX_PATH")
+    faiss_top_k: int = Field(default=5, alias="FAISS_TOP_K")
+    faiss_build_max_cards: int = Field(default=500, alias="FAISS_BUILD_MAX_CARDS")
     openclip_model_name: str = Field(default="ViT-B-32", alias="OPENCLIP_MODEL_NAME")
 
     global_requests_per_minute_cap: int = Field(alias="GLOBAL_REQUESTS_PER_MINUTE_CAP")
@@ -57,6 +59,8 @@ class Settings(BaseSettings):
             "CARDMARKET_BULK_REFRESH_HOURS": self.cardmarket_bulk_refresh_hours,
             "IMAGE_DOWNLOAD_TIMEOUT_MS": self.image_download_timeout_ms,
             "GLOBAL_REQUESTS_PER_MINUTE_CAP": self.global_requests_per_minute_cap,
+            "FAISS_TOP_K": self.faiss_top_k,
+            "FAISS_BUILD_MAX_CARDS": self.faiss_build_max_cards,
         }
         for key, value in positive_fields.items():
             if value <= 0:

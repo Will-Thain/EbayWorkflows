@@ -19,6 +19,7 @@ from .models import (
     WorkflowStep,
 )
 from .services.card_regions import CardRegion, detect_card_regions
+from .services.embedding_index import apply_embedding_evidence, index_exists, search_similar_cards
 from .services.ocr_extract import extract_ocr_fields
 
 
@@ -70,11 +71,16 @@ def run_phase5_ocr_verification(
     settings: Settings,
     mock_ocr_file: str | None = None,
     use_real_ocr: bool = False,
+    use_embedding_match: bool = False,
 ) -> str:
     run = WorkflowRun(
         workflow_name=f"{settings.workflow_default_name}_phase5",
         status="running",
-        input_config_json={"mock_ocr_file": mock_ocr_file, "use_real_ocr": use_real_ocr},
+        input_config_json={
+            "mock_ocr_file": mock_ocr_file,
+            "use_real_ocr": use_real_ocr,
+            "use_embedding_match": use_embedding_match,
+        },
         started_at=_now(),
     )
     session.add(run)
@@ -96,7 +102,9 @@ def run_phase5_ocr_verification(
         detections_created = 0
         ocr_rows_created = 0
         candidates_updated = 0
+        embedding_updates = 0
         crop_dir = str(Path(settings.image_cache_dir) / "crops")
+        embedding_enabled = use_embedding_match and index_exists(settings.faiss_index_path)
 
         def _persist_region_detection(
             listing_image: ListingImage,
@@ -175,13 +183,17 @@ def run_phase5_ocr_verification(
                     candidates_updated += 1
 
         def _process_real_image(listing_image: ListingImage) -> None:
-            nonlocal candidates_updated
+            nonlocal candidates_updated, embedding_updates
             if not listing_image.local_path:
                 return
             _clear_card_regions(session, listing_image.id)
             regions = detect_card_regions(listing_image.local_path, crop_dir)
             if not regions:
                 return
+
+            candidates = session.execute(
+                select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
+            ).scalars().all()
 
             best_title: str | None = None
             best_confidence = 0.0
@@ -204,10 +216,15 @@ def run_phase5_ocr_verification(
                         best_confidence = title_conf
                         best_title = title
 
+                if embedding_enabled and crop_path:
+                    matches = search_similar_cards(
+                        crop_path,
+                        settings,
+                        top_k=settings.faiss_top_k,
+                    )
+                    embedding_updates += apply_embedding_evidence(candidates, matches)
+
             if best_title:
-                candidates = session.execute(
-                    select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
-                ).scalars().all()
                 for candidate in candidates:
                     _update_candidate_confidence(candidate, best_title)
                     candidates_updated += 1
@@ -235,6 +252,8 @@ def run_phase5_ocr_verification(
             "detections_created": detections_created,
             "ocr_rows_created": ocr_rows_created,
             "candidates_updated": candidates_updated,
+            "embedding_updates": embedding_updates,
+            "embedding_enabled": embedding_enabled,
         }
         run.status = "succeeded"
         run.finished_at = _now()

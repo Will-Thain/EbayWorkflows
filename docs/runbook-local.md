@@ -25,6 +25,8 @@
    `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
 10. sync Scryfall bulk cards into DB:
    `ebay-workflows sync-scryfall`
+10b. build OpenCLIP+FAISS art index (subset, rate-limited downloads):
+   `ebay-workflows build-faiss-index --max-cards 500`
 11. run title-based matching:
    `ebay-workflows phase2-match-title --top-k 3`
 12. set `CARDMARKET_BULK_FILE_PATH=./samples/cardmarket_prices.csv` for local test data
@@ -37,7 +39,7 @@
 16. run OCR verification (mock evidence):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
     or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
-   `ebay-workflows phase5-verify-ocr --use-real-ocr`
+   `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
    - crops saved under `IMAGE_CACHE_DIR/crops`
 17. run bulk-lot multi-card detection:
