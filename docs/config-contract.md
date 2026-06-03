@@ -49,6 +49,18 @@ Define all required environment variables, defaults, and validation rules before
 - `OCR_ENGINE` (default `paddleocr`)
 - `FAISS_INDEX_PATH` (required when vector search enabled)
 - `OPENCLIP_MODEL_NAME` (default `ViT-B-32`)
+- `IMAGE_MIN_REGION_SCORE` (default `0.55`; minimum OpenCV region score before OCR/embedding)
+- `IMAGE_ALLOW_FULL_FRAME_FALLBACK` (default `false`; when false, skip images with no card-like crop)
+- `PIPELINE_MAX_IMAGE_WORKERS` (default `4`; parallel workers for Phase 5/6 image analysis)
+- `PHASE1_SKIP_EXISTING_LISTINGS` (default `true`; skip eBay listings already stored by `external_listing_id`)
+- `TESSERACT_CMD` (optional; path to `tesseract.exe` on Windows)
+- `TITLE_MATCH_MIN_SCORE_FOR_PRICING` (default `0.92`; minimum fuzzy match score to attach Cardmarket prices)
+- `TITLE_MATCH_MIN_SCORE_NON_MTG` (default `0.98`; stricter threshold when listing title looks non-MTG)
+- `CARDMARKET_MAX_UNIT_PRICE_EUR` (default `250`; reject or cap outlier unit prices unless match is very strong)
+- `EV_MAX_LISTING_COST_MULTIPLE` (default `10`; cap rank EV relative to listing cost)
+- `PHASE6_BULK_LISTINGS_ONLY` (default `true`; run real lot detection only on bulk-style titles)
+- `PHASE6_MIN_LOT_DETECTIONS` (default `2`; minimum distinct lot card detections before scoring)
+- `PHASE6_MAX_LOT_EV_MULTIPLE` (default `50`; cap lot EV relative to listing cost)
 
 ## Compliance and Safety
 

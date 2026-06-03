@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
+from .services.ev_guardrails import title_match_allowed_for_pricing
 
 
 def _now() -> datetime:
@@ -119,19 +120,26 @@ def run_phase2_title_match(
             matches = _best_matches(listing.title, cards, top_k=top_k)
             rank = 1
             for card, score in matches:
+                pricing_ok, reject_reason = title_match_allowed_for_pricing(
+                    listing.title, card.name, score, settings
+                )
+                evidence = {
+                    "listing_title": listing.title,
+                    "matched_card_name": card.name,
+                    "method": "rapidfuzz_wratio",
+                    "pricing_eligible": pricing_ok,
+                }
+                if reject_reason:
+                    evidence["pricing_reject_reason"] = reject_reason
                 session.add(
                     ListingCardCandidate(
                         listing_id=listing.id,
                         source_method="title_match",
                         scryfall_id=card.id,
                         match_score=score,
-                        confidence_score=score,
+                        confidence_score=score if pricing_ok else min(score, 0.5),
                         rank_position=rank,
-                        evidence_json={
-                            "listing_title": listing.title,
-                            "matched_card_name": card.name,
-                            "method": "rapidfuzz_wratio",
-                        },
+                        evidence_json=evidence,
                     )
                 )
                 rank += 1

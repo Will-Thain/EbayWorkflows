@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .models import CardPrice, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
+from .services.ev_guardrails import apply_price_to_evidence
 
 
 def _now() -> datetime:
@@ -130,16 +131,21 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
             if not price:
                 continue
             evidence: dict[str, Any] = dict(candidate.evidence_json or {})
-            evidence["cardmarket_price"] = {
-                "currency": price.currency,
-                "price_amount": float(price.price_amount),
-                "price_type": price.price_type,
-                "price_timestamp": price.price_timestamp,
-                "condition": price.condition,
-                "language": price.language,
-            }
+            if not evidence.get("pricing_eligible", True):
+                candidate.evidence_json = evidence
+                continue
+            listing_title = str(evidence.get("listing_title") or "")
+            card_name = candidate.scryfall_card.name if candidate.scryfall_card else ""
+            if apply_price_to_evidence(
+                evidence,
+                price,
+                listing_title=listing_title,
+                matched_card_name=card_name,
+                match_score=float(candidate.match_score),
+                settings=settings,
+            ):
+                joined += 1
             candidate.evidence_json = evidence
-            joined += 1
 
         step.status = "succeeded"
         step.finished_at = _now()

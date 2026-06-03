@@ -52,7 +52,9 @@
    `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
    - crops saved under `IMAGE_CACHE_DIR/crops`
-17. live production pipeline (after production OAuth works):
+17. image-heavy phases use parallel workers (`PIPELINE_MAX_IMAGE_WORKERS`) and skip images without visible card regions (`IMAGE_MIN_REGION_SCORE`, `IMAGE_ALLOW_FULL_FRAME_FALLBACK=false`).
+17b. Phase 1 skips listings already in DB when `PHASE1_SKIP_EXISTING_LISTINGS=true` (default).
+17c. live production pipeline (after production OAuth works):
    `./scripts/run-live-pipeline.ps1 -MaxPages 1`
    - requires Tesseract on PATH for meaningful OCR text; without it, OpenCV regions still run but OCR fields may be empty
 17b. run bulk-lot multi-card detection (mock):

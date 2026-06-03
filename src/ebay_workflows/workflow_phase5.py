@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,9 +19,9 @@ from .models import (
     WorkflowRun,
     WorkflowStep,
 )
-from .services.card_regions import CardRegion, detect_card_regions
-from .services.embedding_index import apply_embedding_evidence, index_exists, search_similar_cards
-from .services.ocr_extract import extract_ocr_fields
+from .services.card_regions import CardRegion
+from .services.embedding_index import apply_embedding_evidence, index_exists
+from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
 
 
 def _now() -> datetime:
@@ -99,6 +100,7 @@ def run_phase5_ocr_verification(
 
     try:
         listing_images = session.execute(select(ListingImage)).scalars().all()
+        images_skipped_no_visible_cards = 0
         detections_created = 0
         ocr_rows_created = 0
         candidates_updated = 0
@@ -182,56 +184,67 @@ def run_phase5_ocr_verification(
                     _update_candidate_confidence(candidate, best_title)
                     candidates_updated += 1
 
-        def _process_real_image(listing_image: ListingImage) -> None:
+        def _persist_analysis(listing_image: ListingImage, analysis: ImageAnalysisResult) -> None:
             nonlocal candidates_updated, embedding_updates
-            if not listing_image.local_path:
+            if analysis.skipped:
                 return
             _clear_card_regions(session, listing_image.id)
-            regions = detect_card_regions(listing_image.local_path, crop_dir)
-            if not regions:
-                return
-
             candidates = session.execute(
                 select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
             ).scalars().all()
 
             best_title: str | None = None
             best_confidence = 0.0
-            for region in regions:
-                crop_path = region.crop_path or listing_image.local_path
-                fields = extract_ocr_fields(
-                    crop_path,
-                    engine=settings.ocr_engine,
-                    tesseract_cmd=settings.tesseract_cmd,
-                )
-                if not fields:
-                    continue
-                title = _persist_region_detection(
-                    listing_image,
-                    region,
-                    fields,
-                    model_version="phase5_region_ocr_v2",
-                    engine_name=settings.ocr_engine,
-                    engine_version="v2",
-                )
-                if title:
-                    title_conf = fields.get("title", (title, 0.0))[1]
-                    if title_conf >= best_confidence:
-                        best_confidence = title_conf
-                        best_title = title
-
-                if embedding_enabled and crop_path:
-                    matches = search_similar_cards(
-                        crop_path,
-                        settings,
-                        top_k=settings.faiss_top_k,
+            for region_analysis in analysis.regions:
+                region = region_analysis.region
+                fields = region_analysis.fields
+                if fields:
+                    title = _persist_region_detection(
+                        listing_image,
+                        region,
+                        fields,
+                        model_version="phase5_region_ocr_v2",
+                        engine_name=settings.ocr_engine,
+                        engine_version="v2",
                     )
-                    embedding_updates += apply_embedding_evidence(candidates, matches)
+                    if title:
+                        title_conf = fields.get("title", (title, 0.0))[1]
+                        if title_conf >= best_confidence:
+                            best_confidence = title_conf
+                            best_title = title
+                if region_analysis.embedding_matches:
+                    embedding_updates += apply_embedding_evidence(candidates, region_analysis.embedding_matches)
 
             if best_title:
                 for candidate in candidates:
                     _update_candidate_confidence(candidate, best_title)
                     candidates_updated += 1
+
+        def _run_parallel_real_ocr(images: list[ListingImage]) -> list[ImageAnalysisResult]:
+            eligible = [img for img in images if img.local_path]
+            if not eligible:
+                return []
+            workers = max(1, int(getattr(settings, "pipeline_max_image_workers", 4)))
+            results: list[ImageAnalysisResult] = []
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(
+                        analyze_listing_image,
+                        listing_image_id=str(img.id),
+                        listing_id=str(img.listing_id),
+                        local_path=img.local_path or "",
+                        crop_dir=crop_dir,
+                        settings=settings,
+                        use_embedding=embedding_enabled,
+                    ): img
+                    for img in eligible
+                }
+                total = len(futures)
+                for index, future in enumerate(as_completed(futures), start=1):
+                    results.append(future.result())
+                    if index % 10 == 0 or index == total:
+                        print(f"Phase 5 image analysis: {index}/{total}")
+            return results
 
         if mock_ocr_file:
             mock_rows = _load_mock_ocr(mock_ocr_file)
@@ -245,20 +258,33 @@ def run_phase5_ocr_verification(
                     continue
                 _process_mock_row(listing_image, row)
         elif use_real_ocr:
-            for listing_image in listing_images:
-                _process_real_image(listing_image)
+            images_skipped_no_visible_cards = 0
+            analyses = _run_parallel_real_ocr(listing_images)
+            by_image_id = {str(img.id): img for img in listing_images}
+            for analysis in analyses:
+                listing_image = by_image_id.get(analysis.listing_image_id)
+                if listing_image is None:
+                    continue
+                if analysis.skipped:
+                    images_skipped_no_visible_cards += 1
+                    continue
+                _persist_analysis(listing_image, analysis)
         else:
             raise ValueError("Provide --mock-ocr-file or enable --use-real-ocr.")
 
         step.status = "succeeded"
         step.finished_at = _now()
-        step.metrics_json = {
+        metrics: dict[str, Any] = {
             "detections_created": detections_created,
             "ocr_rows_created": ocr_rows_created,
             "candidates_updated": candidates_updated,
             "embedding_updates": embedding_updates,
             "embedding_enabled": embedding_enabled,
+            "pipeline_max_image_workers": getattr(settings, "pipeline_max_image_workers", 4),
         }
+        if use_real_ocr and not mock_ocr_file:
+            metrics["images_skipped_no_visible_cards"] = images_skipped_no_visible_cards
+        step.metrics_json = metrics
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()

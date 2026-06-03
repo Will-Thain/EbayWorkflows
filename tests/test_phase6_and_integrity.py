@@ -91,6 +91,17 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
         workflow_default_name="ebay_workflows",
         image_cache_dir="./.cache/images",
         ocr_engine="pytesseract",
+        pipeline_max_image_workers=2,
+        image_min_region_score=0.55,
+        image_allow_full_frame_fallback=False,
+        tesseract_cmd=None,
+        title_match_min_score_for_pricing=0.92,
+        title_match_min_score_non_mtg=0.98,
+        cardmarket_max_unit_price_eur=250.0,
+        ev_max_listing_cost_multiple=10.0,
+        phase6_bulk_listings_only=False,
+        phase6_min_lot_detections=1,
+        phase6_max_lot_ev_multiple=50.0,
     )
     run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))
     run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))

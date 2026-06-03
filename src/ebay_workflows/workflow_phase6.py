@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -26,6 +27,8 @@ from .services.bulk_lot_detection import (
     detect_lot_cards_from_image,
     detected_lot_cards_to_payload,
 )
+from .services.ev_guardrails import cap_ev_adjusted, sanitize_unit_price, title_match_allowed_for_pricing
+from .services.listing_filters import is_bulk_lot_title
 
 
 def _now() -> datetime:
@@ -82,6 +85,7 @@ def _process_lot_cards_for_image(
     *,
     model_version: str,
     engine_name: str,
+    settings: Settings,
 ) -> tuple[int, int, dict[str, Any] | None]:
     """Returns detections_created, ocr_rows_created, lot_score_explanation or None."""
     if not detected_cards:
@@ -134,9 +138,19 @@ def _process_lot_cards_for_image(
         card_match, match_score = _best_card_match(title, cards)
         unit_price = Decimal("0")
         if card_match:
-            cm_price = latest_price_by_card.get(str(card_match.id))
-            if cm_price:
-                unit_price = _to_decimal(cm_price.price_amount)
+            allowed, _ = title_match_allowed_for_pricing(
+                listing.title, card_match.name, float(match_score or 0), settings
+            )
+            if allowed:
+                cm_price = latest_price_by_card.get(str(card_match.id))
+                if cm_price:
+                    sanitized, _ = sanitize_unit_price(
+                        cm_price.price_amount,
+                        match_score=float(match_score or 0),
+                        settings=settings,
+                    )
+                    if sanitized is not None:
+                        unit_price = _to_decimal(sanitized)
         subtotal = unit_price * quantity
         lot_total += subtotal
         confidence_sum += detection_confidence * Decimal(str(match_score or 1.0))
@@ -153,12 +167,20 @@ def _process_lot_cards_for_image(
             }
         )
 
+    if len(lot_items) < settings.phase6_min_lot_detections:
+        return detections_created, ocr_rows_created, None
+
     listing_cost = _to_decimal(listing.price_amount) + _to_decimal(listing.shipping_amount)
     ev_raw = lot_total - listing_cost
+    max_lot_total = listing_cost * Decimal(str(settings.phase6_max_lot_ev_multiple))
+    if lot_total > max_lot_total:
+        lot_total = max_lot_total
+        ev_raw = lot_total - listing_cost
     confidence_score = confidence_sum / Decimal(str(max(confidence_count, 1)))
     confidence_score = max(Decimal("0"), min(Decimal("1"), confidence_score))
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
+    rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
 
     score = session.execute(
         select(ListingScore).where(ListingScore.listing_id == listing.id)
@@ -169,12 +191,14 @@ def _process_lot_cards_for_image(
         "lot_items": lot_items,
         "cards_detected": len(lot_items),
     }
+    if ev_capped:
+        explanation["ev_capped"] = True
     if score:
         score.ev_raw = ev_raw
         score.ev_adjusted = ev_adjusted
         score.confidence_score = confidence_score
         score.risk_score = risk_score
-        score.rank_value = ev_adjusted
+        score.rank_value = rank_value
         score.scoring_version = "v2_lot"
         score.explanation_json = explanation
         score.updated_at = _now()
@@ -186,7 +210,7 @@ def _process_lot_cards_for_image(
                 ev_adjusted=ev_adjusted,
                 confidence_score=confidence_score,
                 risk_score=risk_score,
-                rank_value=ev_adjusted,
+                rank_value=rank_value,
                 scoring_version="v2_lot",
                 explanation_json=explanation,
                 updated_at=_now(),
@@ -243,6 +267,8 @@ def run_phase6_bulk_lot_detection(
         ocr_rows_created = 0
         listings_updated = 0
         images_processed = 0
+        images_skipped_no_visible_cards = 0
+        listings_skipped_not_bulk = 0
         crop_dir = str(Path(settings.image_cache_dir) / "lot_crops")
 
         if mock_lot_file:
@@ -269,25 +295,59 @@ def run_phase6_bulk_lot_detection(
                     latest_price_by_card,
                     model_version="phase6_mock_v1",
                     engine_name="mock",
+                    settings=settings,
                 )
                 if d or o:
                     detections_created += d
                     ocr_rows_created += o
                     listings_updated += 1
         elif use_real_detection:
-            for listing_image in listing_images:
-                if not listing_image.local_path:
+            eligible = []
+            for img in listing_images:
+                if not img.local_path:
                     continue
-                listing = listing_by_id.get(listing_image.listing_id)
-                if not listing:
+                listing = listing_by_id.get(img.listing_id)
+                if listing is None:
                     continue
+                if settings.phase6_bulk_listings_only and not is_bulk_lot_title(listing.title):
+                    listings_skipped_not_bulk += 1
+                    continue
+                eligible.append(img)
+            workers = max(1, int(getattr(settings, "pipeline_max_image_workers", 4)))
+
+            def _detect_payload(image: ListingImage) -> tuple[str, list[dict[str, Any]]]:
                 lot_cards = detect_lot_cards_from_image(
-                    listing_image.local_path,
+                    image.local_path or "",
                     crop_dir,
                     ocr_engine=settings.ocr_engine,
                     tesseract_cmd=settings.tesseract_cmd,
+                    min_region_score=settings.image_min_region_score,
+                    allow_full_frame_fallback=settings.image_allow_full_frame_fallback,
                 )
-                payload = detected_lot_cards_to_payload(lot_cards)
+                return str(image.id), detected_lot_cards_to_payload(lot_cards)
+
+            detection_results: dict[str, list[dict[str, Any]]] = {}
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_detect_payload, image): image for image in eligible}
+                total = len(futures)
+                for index, future in enumerate(as_completed(futures), start=1):
+                    image_id, payload = future.result()
+                    detection_results[image_id] = payload
+                    if index % 10 == 0 or index == total:
+                        print(f"Phase 6 bulk detection: {index}/{total}")
+
+            by_image_id = {str(img.id): img for img in eligible}
+            for image_id, payload in detection_results.items():
+                listing_image = by_image_id.get(image_id)
+                if listing_image is None:
+                    continue
+                listing = listing_by_id.get(listing_image.listing_id)
+                if listing is None:
+                    continue
+                images_processed += 1
+                if not payload:
+                    images_skipped_no_visible_cards += 1
+                    continue
                 d, o, _ = _process_lot_cards_for_image(
                     session,
                     listing_image,
@@ -297,8 +357,8 @@ def run_phase6_bulk_lot_detection(
                     latest_price_by_card,
                     model_version="phase6_opencv_v1",
                     engine_name=settings.ocr_engine,
+                    settings=settings,
                 )
-                images_processed += 1
                 if d or o:
                     detections_created += d
                     ocr_rows_created += o
@@ -308,12 +368,17 @@ def run_phase6_bulk_lot_detection(
 
         step.status = "succeeded"
         step.finished_at = _now()
-        step.metrics_json = {
+        metrics: dict[str, Any] = {
             "detections_created": detections_created,
             "ocr_rows_created": ocr_rows_created,
             "listings_updated": listings_updated,
             "images_processed": images_processed,
+            "pipeline_max_image_workers": getattr(settings, "pipeline_max_image_workers", 4),
         }
+        if use_real_detection and not mock_lot_file:
+            metrics["images_skipped_no_visible_cards"] = images_skipped_no_visible_cards
+            metrics["listings_skipped_not_bulk"] = listings_skipped_not_bulk
+        step.metrics_json = metrics
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()

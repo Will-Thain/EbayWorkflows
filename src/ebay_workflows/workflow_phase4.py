@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, WorkflowStep
+from .services.ev_guardrails import cap_ev_adjusted
 from .services.hybrid_scoring import compute_listing_score_hybrid
 
 
@@ -24,7 +26,11 @@ def _to_decimal(value: float | Decimal | None, default: str = "0") -> Decimal:
     return Decimal(str(value))
 
 
-def _compute_listing_score(candidates: list[ListingCardCandidate], listing: Listing) -> dict:
+def _compute_listing_score(
+    candidates: list[ListingCardCandidate],
+    listing: Listing,
+    settings: Settings,
+) -> dict[str, Any]:
     if not candidates:
         listing_cost = _to_decimal(listing.price_amount) + _to_decimal(listing.shipping_amount)
         return {
@@ -64,17 +70,22 @@ def _compute_listing_score(candidates: list[ListingCardCandidate], listing: List
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
 
+    rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
+    explanation: dict[str, Any] = {
+        "listing_cost": float(listing_cost),
+        "gross_value": float(gross_value),
+        "matched_cards": matched_cards,
+    }
+    if ev_capped:
+        explanation["ev_capped"] = True
+        explanation["ev_cap_multiple"] = settings.ev_max_listing_cost_multiple
     return {
         "ev_raw": ev_raw,
         "confidence_score": confidence_score,
         "risk_score": risk_score,
         "ev_adjusted": ev_adjusted,
-        "rank_value": ev_adjusted,
-        "explanation": {
-            "listing_cost": float(listing_cost),
-            "gross_value": float(gross_value),
-            "matched_cards": matched_cards,
-        },
+        "rank_value": rank_value,
+        "explanation": explanation,
     }
 
 
@@ -111,9 +122,9 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
         for listing in listings:
             listing_candidates = by_listing.get(listing.id, [])
             if use_hybrid:
-                calc = compute_listing_score_hybrid(listing_candidates, listing)
+                calc = compute_listing_score_hybrid(listing_candidates, listing, settings)
             else:
-                calc = _compute_listing_score(listing_candidates, listing)
+                calc = _compute_listing_score(listing_candidates, listing, settings)
             existing = session.execute(
                 select(ListingScore).where(ListingScore.listing_id == listing.id)
             ).scalar_one_or_none()

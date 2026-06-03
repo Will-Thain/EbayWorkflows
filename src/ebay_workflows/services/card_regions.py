@@ -27,6 +27,7 @@ def detect_card_regions(
     *,
     max_regions: int = 5,
     min_area_ratio: float = 0.02,
+    fallback_to_full_frame: bool = True,
 ) -> list[CardRegion]:
     """
     Detect card-like rectangles with OpenCV contour filtering.
@@ -72,7 +73,9 @@ def detect_card_regions(
 
     candidates.sort(key=lambda item: item[0], reverse=True)
     if not candidates:
-        return [_full_frame_region(str(path))]
+        if fallback_to_full_frame:
+            return [_full_frame_region(str(path))]
+        return []
 
     Path(crop_dir).mkdir(parents=True, exist_ok=True)
     stem = hashlib.sha256(path.read_bytes()).hexdigest()[:16]

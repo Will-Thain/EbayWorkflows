@@ -74,6 +74,8 @@ def run_phase1(
             raise ValueError("ENABLE_EBAY_API is false. Provide --mock-input-file to run Phase 1 without eBay.")
 
         inserted = 0
+        updated = 0
+        skipped_existing = 0
         image_rows = 0
         downloaded = 0
 
@@ -81,6 +83,10 @@ def run_phase1(
             existing = session.execute(
                 select(Listing).where(Listing.external_listing_id == record.external_listing_id)
             ).scalar_one_or_none()
+
+            if existing and settings.phase1_skip_existing_listings:
+                skipped_existing += 1
+                continue
 
             if existing:
                 existing.title = record.title
@@ -92,6 +98,7 @@ def run_phase1(
                 existing.raw_payload_json = record.raw_payload
                 existing.last_seen_at = _now()
                 listing = existing
+                updated += 1
             else:
                 listing = Listing(
                     source="ebay",
@@ -152,6 +159,8 @@ def run_phase1(
         step.metrics_json = {
             "records_seen": len(records),
             "listings_inserted": inserted,
+            "listings_updated": updated,
+            "listings_skipped_existing": skipped_existing,
             "image_rows_inserted": image_rows,
             "images_downloaded": downloaded,
         }

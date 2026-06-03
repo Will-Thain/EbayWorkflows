@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .card_regions import detect_card_regions
+from .image_gate import assess_visible_card_regions
 from .ocr_extract import extract_ocr_fields
 
 
@@ -27,17 +27,22 @@ def detect_lot_cards_from_image(
     tesseract_cmd: str | None = None,
     max_cards: int = 12,
     min_area_ratio: float = 0.008,
+    min_region_score: float = 0.55,
+    allow_full_frame_fallback: bool = False,
 ) -> list[DetectedLotCard]:
     """
     Detect multiple card-like regions in a bulk-lot photo and OCR each crop for a title.
     """
-    regions = detect_card_regions(
+    gate = assess_visible_card_regions(
         image_path,
         crop_dir,
         max_regions=max_cards,
         min_area_ratio=min_area_ratio,
+        min_region_score=min_region_score,
+        allow_full_frame_fallback=allow_full_frame_fallback,
     )
-    if not regions:
+    regions = gate.regions
+    if not gate.has_visible_cards or not regions:
         return []
 
     detected: list[DetectedLotCard] = []

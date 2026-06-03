@@ -3,7 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from ..config import Settings
 from ..models import Listing, ListingCardCandidate
+from .ev_guardrails import cap_ev_adjusted
 
 # Versioned weights for v2_hybrid scoring.
 HYBRID_WEIGHTS_V2 = {
@@ -58,6 +60,7 @@ def composite_hybrid_confidence(components: dict[str, float]) -> float:
 def compute_listing_score_hybrid(
     candidates: list[ListingCardCandidate],
     listing: Listing,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     if not candidates:
         listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
@@ -102,18 +105,27 @@ def compute_listing_score_hybrid(
     confidence_score = confidence_total / Decimal(str(max(matched, 1)))
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
+    rank_value = ev_adjusted
+    ev_capped = False
+    if settings is not None:
+        rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
+
+    explanation: dict[str, Any] = {
+        "listing_cost": float(listing_cost),
+        "gross_value": float(gross_value),
+        "matched_cards": matched_cards,
+        "weights": {k: float(v) for k, v in HYBRID_WEIGHTS_V2.items()},
+        "scoring_version": "v2_hybrid",
+    }
+    if ev_capped:
+        explanation["ev_capped"] = True
+        explanation["ev_cap_multiple"] = settings.ev_max_listing_cost_multiple if settings else None
 
     return {
         "ev_raw": ev_raw,
         "confidence_score": confidence_score,
         "risk_score": risk_score,
         "ev_adjusted": ev_adjusted,
-        "rank_value": ev_adjusted,
-        "explanation": {
-            "listing_cost": float(listing_cost),
-            "gross_value": float(gross_value),
-            "matched_cards": matched_cards,
-            "weights": {k: float(v) for k, v in HYBRID_WEIGHTS_V2.items()},
-            "scoring_version": "v2_hybrid",
-        },
+        "rank_value": rank_value,
+        "explanation": explanation,
     }

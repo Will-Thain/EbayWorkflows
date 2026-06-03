@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     faiss_top_k: int = Field(default=5, alias="FAISS_TOP_K")
     faiss_build_max_cards: int = Field(default=500, alias="FAISS_BUILD_MAX_CARDS")
     openclip_model_name: str = Field(default="ViT-B-32", alias="OPENCLIP_MODEL_NAME")
+    image_min_region_score: float = Field(default=0.55, alias="IMAGE_MIN_REGION_SCORE")
+    image_allow_full_frame_fallback: bool = Field(default=False, alias="IMAGE_ALLOW_FULL_FRAME_FALLBACK")
+    pipeline_max_image_workers: int = Field(default=4, alias="PIPELINE_MAX_IMAGE_WORKERS")
+    phase1_skip_existing_listings: bool = Field(default=True, alias="PHASE1_SKIP_EXISTING_LISTINGS")
+    title_match_min_score_for_pricing: float = Field(default=0.92, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
+    title_match_min_score_non_mtg: float = Field(default=0.98, alias="TITLE_MATCH_MIN_SCORE_NON_MTG")
+    cardmarket_max_unit_price_eur: float = Field(default=250.0, alias="CARDMARKET_MAX_UNIT_PRICE_EUR")
+    ev_max_listing_cost_multiple: float = Field(default=10.0, alias="EV_MAX_LISTING_COST_MULTIPLE")
+    phase6_bulk_listings_only: bool = Field(default=True, alias="PHASE6_BULK_LISTINGS_ONLY")
+    phase6_min_lot_detections: int = Field(default=2, alias="PHASE6_MIN_LOT_DETECTIONS")
+    phase6_max_lot_ev_multiple: float = Field(default=50.0, alias="PHASE6_MAX_LOT_EV_MULTIPLE")
 
     global_requests_per_minute_cap: int = Field(alias="GLOBAL_REQUESTS_PER_MINUTE_CAP")
     enable_provider_policy_checks: bool = Field(default=True, alias="ENABLE_PROVIDER_POLICY_CHECKS")
@@ -83,6 +94,7 @@ class Settings(BaseSettings):
             "GLOBAL_REQUESTS_PER_MINUTE_CAP": self.global_requests_per_minute_cap,
             "FAISS_TOP_K": self.faiss_top_k,
             "FAISS_BUILD_MAX_CARDS": self.faiss_build_max_cards,
+            "PIPELINE_MAX_IMAGE_WORKERS": self.pipeline_max_image_workers,
         }
         for key, value in positive_fields.items():
             if value <= 0:
