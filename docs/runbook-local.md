@@ -9,7 +9,9 @@
 
 ## Setup Steps
 
-1. create and activate virtual environment
+1. install Tesseract OCR (Windows): `winget install -e --id UB-Mannheim.TesseractOCR`
+   - restart the terminal so `tesseract` is on PATH, or set `TESSERACT_CMD` in `.env`
+1b. create and activate virtual environment
 2. install dependencies (`pip install -e .` or `pip install -r requirements.txt`)
 3. set required environment variables from `.env.example`
 4. run DB migrations
@@ -32,7 +34,10 @@
    `ebay-workflows build-faiss-index --max-cards 500`
 11. run title-based matching:
    `ebay-workflows phase2-match-title --top-k 3`
-12. set `CARDMARKET_BULK_FILE_PATH=./samples/cardmarket_prices.csv` for local test data
+12. download full Cardmarket MTG singles price guide (official daily export):
+   `ebay-workflows download-cardmarket-bulk -o ./data/cardmarket/prices.csv`
+   - raw JSON cached under `./data/cardmarket/`
+   - set `CARDMARKET_BULK_FILE_PATH=./data/cardmarket/prices.csv`
 13. sync Cardmarket pricing:
    `ebay-workflows sync-cardmarket`
 14. run Phase 3 price join:

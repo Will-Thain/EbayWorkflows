@@ -39,7 +39,7 @@ Define all required environment variables, defaults, and validation rules before
 
 ## Cardmarket
 
-- `CARDMARKET_BULK_FILE_PATH` (required; local path to downloaded bulk price file)
+- `CARDMARKET_BULK_FILE_PATH` (required; local path to normalized bulk CSV — generate with `download-cardmarket-bulk`)
 - `CARDMARKET_BULK_REFRESH_HOURS` (default `24`)
 
 ## Image/OCR/Matching

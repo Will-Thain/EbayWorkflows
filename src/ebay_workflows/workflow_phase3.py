@@ -31,7 +31,8 @@ def sync_cardmarket_prices(session: Session, settings: Settings) -> int:
     cards = session.execute(select(ScryfallCard.id, ScryfallCard.name)).all()
     name_map = {name.lower(): card_id for card_id, name in cards}
 
-    inserted = 0
+    # Multiple Cardmarket products can share a name; keep the highest price per snapshot key.
+    pending: dict[tuple[uuid.UUID, str, str | None, str | None, str], tuple[Decimal, dict[str, Any]]] = {}
     for row in rows:
         scryfall_id = _as_uuid((row.get("scryfall_id") or "").strip())
         if scryfall_id is None:
@@ -49,6 +50,13 @@ def sync_cardmarket_prices(session: Session, settings: Settings) -> int:
         price_type = (row.get("price_type") or "trend").strip() or "trend"
         price_timestamp = (row.get("price_timestamp") or _now().isoformat()).strip()
 
+        key = (scryfall_id, price_type, condition, language, price_timestamp)
+        existing = pending.get(key)
+        if existing is None or price_amount > existing[0]:
+            pending[key] = (price_amount, row)
+
+    inserted = 0
+    for (scryfall_id, price_type, condition, language, price_timestamp), (price_amount, row) in pending.items():
         session.execute(
             delete(CardPrice).where(
                 CardPrice.source == "cardmarket",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import httpx
 import typer
 from pydantic import ValidationError
 from rich.console import Console
@@ -13,6 +14,7 @@ from .config import Settings
 from .db import build_engine, build_session_factory
 from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
+from .integrations.cardmarket_bulk import download_and_build_singles_csv
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
 from .services.embedding_index import build_faiss_index
@@ -257,6 +259,45 @@ def phase2_match_title(
 
     console.print("[bold green]Phase 2 title matching completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("download-cardmarket-bulk")
+def download_cardmarket_bulk(
+    output: str = typer.Option(
+        "./data/cardmarket/prices.csv",
+        "--output",
+        "-o",
+        help="Path for normalized CSV used by sync-cardmarket",
+    ),
+    cache_dir: str = typer.Option(
+        "./data/cardmarket",
+        "--cache-dir",
+        help="Directory for raw Cardmarket JSON exports",
+    ),
+    price_field: str = typer.Option(
+        "trend",
+        "--price-field",
+        help="Cardmarket price column: trend, low, avg, avg7, avg30, low-foil, trend-foil",
+    ),
+    force: bool = typer.Option(False, "--force", help="Re-download JSON even if cached"),
+) -> None:
+    """Download official Cardmarket MTG singles price guide and build normalized CSV."""
+    try:
+        meta = download_and_build_singles_csv(
+            output,
+            cache_dir=cache_dir,
+            price_field=price_field,
+            force_download=force,
+        )
+    except (httpx.HTTPError, ValueError, OSError) as exc:
+        console.print(f"[bold red]Cardmarket download failed:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    console.print("[bold green]Cardmarket bulk CSV ready.[/bold green]")
+    console.print(f"Output: [cyan]{meta['output_csv']}[/cyan]")
+    console.print(f"Rows: [cyan]{meta['rows_written']}[/cyan] (from {meta['products_count']} singles)")
+    console.print(f"Price field: [cyan]{meta['price_field']}[/cyan]")
+    console.print("Set CARDMARKET_BULK_FILE_PATH to this file, then run sync-cardmarket.")
 
 
 @app.command("sync-cardmarket")
