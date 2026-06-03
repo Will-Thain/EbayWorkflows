@@ -12,6 +12,7 @@ from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
+from .services.embedding_index import build_faiss_index
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
 from .workflow_phase1 import run_phase1
@@ -160,6 +161,35 @@ def sync_scryfall() -> None:
     console.print(f"[bold green]Scryfall sync complete.[/bold green] Loaded [cyan]{count}[/cyan] cards.")
 
 
+@app.command("build-faiss-index")
+def build_faiss_index_cmd(
+    max_cards: int | None = typer.Option(
+        None,
+        "--max-cards",
+        help="Max Scryfall cards to index (defaults to FAISS_BUILD_MAX_CARDS)",
+    ),
+) -> None:
+    """Build OpenCLIP + FAISS index from Scryfall card art."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot build FAISS index:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    limit = max_cards if max_cards is not None else settings.faiss_build_max_cards
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        summary = build_faiss_index(session, settings, max_cards=limit)
+
+    table = Table(title="FAISS Index Build Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in summary.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    console.print("[bold green]FAISS index build complete.[/bold green]")
+
+
 @app.command("phase2-match-title")
 def phase2_match_title(
     top_k: int = typer.Option(3, "--top-k", help="Top candidate cards retained per listing"),
@@ -241,6 +271,11 @@ def phase5_verify_ocr(
         "--use-real-ocr/--no-use-real-ocr",
         help="Use OpenCV + Tesseract OCR from local image files when no mock file is supplied",
     ),
+    use_embedding_match: bool = typer.Option(
+        False,
+        "--use-embedding-match/--no-use-embedding-match",
+        help="Run OpenCLIP+FAISS similarity on crops when index exists",
+    ),
 ) -> None:
     """Run Milestone 5 OCR verification to refine candidate confidence."""
     try:
@@ -256,6 +291,7 @@ def phase5_verify_ocr(
             settings,
             mock_ocr_file=mock_ocr_file,
             use_real_ocr=use_real_ocr,
+            use_embedding_match=use_embedding_match,
         )
     console.print("[bold green]Phase 5 OCR verification completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
