@@ -13,6 +13,7 @@ from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
 from .services.embedding_index import build_faiss_index
+from .services.ranked_export import fetch_ranked_listings, write_ranked_json
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
 from .workflow_phase1 import run_phase1
@@ -263,6 +264,56 @@ def phase4_rank(
         run_id = run_phase4_ranking(session, settings, use_hybrid=hybrid)
     console.print("[bold green]Phase 4 ranking completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("export-rankings")
+def export_rankings(
+    limit: int = typer.Option(25, "--limit", help="Max ranked listings to export"),
+    output: str | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write ranked results to JSON file (e.g. ./data/exports/ranked.json)",
+    ),
+) -> None:
+    """Export ranked listings as a Rich table and optional JSON file."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot export rankings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        rows = fetch_ranked_listings(session, limit=limit)
+
+    if not rows:
+        console.print("[yellow]No ranked listings found. Run phase4-rank first.[/yellow]")
+        raise typer.Exit(code=3)
+
+    table = Table(title=f"Top {len(rows)} Ranked Listings")
+    table.add_column("Rank", style="cyan", justify="right")
+    table.add_column("EV Adj", style="green", justify="right")
+    table.add_column("Conf", justify="right")
+    table.add_column("Title", style="white")
+    table.add_column("Top Card", style="magenta")
+    table.add_column("Price", justify="right")
+
+    for row in rows:
+        price = f"{row.price_amount:.2f} {row.currency}"
+        table.add_row(
+            str(row.rank),
+            f"{row.ev_adjusted:.2f}",
+            f"{row.confidence_score:.2f}",
+            row.title[:48] + ("…" if len(row.title) > 48 else ""),
+            (row.top_card_name or "—")[:24],
+            price,
+        )
+    console.print(table)
+
+    if output:
+        path = write_ranked_json(rows, output)
+        console.print(f"[bold green]JSON export written:[/bold green] [cyan]{path}[/cyan]")
 
 
 @app.command("phase5-verify-ocr")

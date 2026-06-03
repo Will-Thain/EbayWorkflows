@@ -36,6 +36,8 @@
    `ebay-workflows phase3-join-prices`
 15. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
    `ebay-workflows phase4-rank --hybrid`
+15b. export ranked results (table + optional JSON):
+   `ebay-workflows export-rankings --limit 25 -o ./data/exports/ranked.json`
 16. run OCR verification (mock evidence):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
     or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
