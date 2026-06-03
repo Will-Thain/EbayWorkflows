@@ -87,9 +87,13 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
     mock_file = tmp_path / "lots.json"
     mock_file.write_text(json.dumps(payload), encoding="utf-8")
 
-    settings = SimpleNamespace(workflow_default_name="ebay_workflows")
-    run_phase6_bulk_lot_detection(session, settings, str(mock_file))
-    run_phase6_bulk_lot_detection(session, settings, str(mock_file))
+    settings = SimpleNamespace(
+        workflow_default_name="ebay_workflows",
+        image_cache_dir="./.cache/images",
+        ocr_engine="pytesseract",
+    )
+    run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))
+    run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))
 
     lot_detection_count = session.execute(
         select(func.count()).select_from(ImageDetection).where(ImageDetection.detection_type == "lot_card")

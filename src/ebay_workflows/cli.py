@@ -356,10 +356,15 @@ def phase5_verify_ocr(
 
 @app.command("phase6-detect-lots")
 def phase6_detect_lots(
-    mock_lot_file: str = typer.Option(
-        ...,
+    mock_lot_file: str | None = typer.Option(
+        None,
         "--mock-lot-file",
         help="Path to JSON mock bulk-lot detections for deterministic execution",
+    ),
+    use_real_detection: bool = typer.Option(
+        False,
+        "--use-real-detection/--no-use-real-detection",
+        help="Detect multiple cards per image with OpenCV + OCR on local listing images",
     ),
 ) -> None:
     """Run Milestone 6 bulk-lot multi-card detection and EV adjustment."""
@@ -371,7 +376,12 @@ def phase6_detect_lots(
 
     session_factory = build_session_factory(settings)
     with session_factory() as session:
-        run_id = run_phase6_bulk_lot_detection(session, settings, mock_lot_file=mock_lot_file)
+        run_id = run_phase6_bulk_lot_detection(
+            session,
+            settings,
+            mock_lot_file=mock_lot_file,
+            use_real_detection=use_real_detection,
+        )
     console.print("[bold green]Phase 6 bulk-lot detection completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
@@ -434,6 +444,11 @@ def run_resumable_pipeline_cmd(
         "--mock-lot-file",
         help="Mock lot detection file used by phase 6",
     ),
+    use_real_lot_detection: bool = typer.Option(
+        False,
+        "--use-real-lot-detection/--no-use-real-lot-detection",
+        help="Use OpenCV bulk-lot detection for phase 6",
+    ),
     from_phase: int = typer.Option(1, "--from-phase", min=1, max=6, help="First phase to execute"),
     to_phase: int = typer.Option(6, "--to-phase", min=1, max=6, help="Last phase to execute"),
     resume: bool = typer.Option(
@@ -458,6 +473,7 @@ def run_resumable_pipeline_cmd(
         mock_ocr_file=mock_ocr_file,
         use_real_ocr=use_real_ocr,
         mock_lot_file=mock_lot_file,
+        use_real_lot_detection=use_real_lot_detection,
         from_phase=from_phase,
         to_phase=to_phase,
         resume=resume,

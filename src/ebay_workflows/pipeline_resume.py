@@ -27,6 +27,7 @@ class ResumablePipelineConfig:
     mock_ocr_file: str | None
     use_real_ocr: bool
     mock_lot_file: str | None
+    use_real_lot_detection: bool
     from_phase: int
     to_phase: int
     resume: bool
@@ -116,9 +117,14 @@ def run_resumable_pipeline(
                 use_real_ocr=cfg.use_real_ocr,
             )
         else:
-            if not cfg.mock_lot_file:
-                raise ValueError("Phase 6 requires --mock-lot-file.")
-            run_id = run_phase6_bulk_lot_detection(session, settings, mock_lot_file=cfg.mock_lot_file)
+            if not cfg.mock_lot_file and not cfg.use_real_lot_detection:
+                raise ValueError("Phase 6 requires --mock-lot-file or --use-real-lot-detection.")
+            run_id = run_phase6_bulk_lot_detection(
+                session,
+                settings,
+                mock_lot_file=cfg.mock_lot_file,
+                use_real_detection=cfg.use_real_lot_detection,
+            )
 
         summary["executed"][f"phase_{phase}"] = run_id
 

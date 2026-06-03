@@ -44,8 +44,10 @@
    `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
    - crops saved under `IMAGE_CACHE_DIR/crops`
-17. run bulk-lot multi-card detection:
+17. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
+    or real OpenCV multi-card detection + OCR on cached images:
+   `ebay-workflows phase6-detect-lots --use-real-detection`
 18. run post-MVP integrity checks:
    `ebay-workflows data-integrity-check`
 19. run local quality gates before push:
