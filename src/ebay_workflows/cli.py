@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import typer
 from pydantic import ValidationError
 from rich.console import Console
@@ -26,6 +29,42 @@ from .workflow_phase6 import run_phase6_bulk_lot_detection
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
 
+_ENV_OVERRIDE_KEYS = (
+    "EBAY_CLIENT_ID",
+    "EBAY_CLIENT_SECRET",
+    "EBAY_SANDBOX_CLIENT_ID",
+    "EBAY_SANDBOX_CLIENT_SECRET",
+    "EBAY_USE_SANDBOX",
+    "DISABLE_LIVE_API_WRITES",
+    "CARDMARKET_BULK_FILE_PATH",
+)
+
+
+def _dotenv_value(key: str) -> str | None:
+    env_path = Path(".env")
+    if not env_path.is_file():
+        return None
+    prefix = f"{key}="
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or not stripped.startswith(prefix):
+            continue
+        return stripped[len(prefix) :].strip()
+    return None
+
+
+def _warn_shell_env_overrides() -> None:
+    for key in _ENV_OVERRIDE_KEYS:
+        if key not in os.environ:
+            continue
+        file_value = _dotenv_value(key)
+        if file_value is None or os.environ[key] == file_value:
+            continue
+        console.print(
+            f"[yellow]Warning:[/yellow] shell variable [cyan]{key}[/cyan] overrides `.env`. "
+            "Run [cyan]./scripts/clear-ebay-env-overrides.ps1[/cyan] or open a new terminal."
+        )
+
 
 @app.command("validate-env")
 def validate_env() -> None:
@@ -42,6 +81,8 @@ def validate_env() -> None:
         console.print(f"[bold red]Environment policy check failed:[/bold red] {exc}")
         raise typer.Exit(code=2) from exc
 
+    _warn_shell_env_overrides()
+
     table = Table(title="Validated Configuration")
     table.add_column("Key", style="cyan")
     table.add_column("Value", style="green")
@@ -49,6 +90,12 @@ def validate_env() -> None:
     table.add_row("BASE_CURRENCY", settings.base_currency)
     table.add_row("ENABLE_EBAY_API", str(settings.enable_ebay_api))
     table.add_row("EBAY_USE_SANDBOX", str(settings.ebay_use_sandbox))
+    table.add_row("EBAY_CLIENT_ID (production)", "set" if settings.ebay_client_id else "not set")
+    table.add_row("EBAY_SANDBOX_CLIENT_ID", "set" if settings.ebay_sandbox_client_id else "not set")
+    table.add_row(
+        "Active eBay credentials",
+        "sandbox" if settings.ebay_use_sandbox else "production",
+    )
     table.add_row("EBAY_REQUESTS_PER_MINUTE", str(settings.ebay_requests_per_minute or "n/a"))
     table.add_row("SCRYFALL_REQUESTS_PER_MINUTE", str(settings.scryfall_requests_per_minute))
     table.add_row("CARDMARKET_BULK_FILE_PATH", settings.cardmarket_bulk_file_path)

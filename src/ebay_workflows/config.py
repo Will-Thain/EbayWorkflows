@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     enable_ebay_api: bool = Field(default=True, alias="ENABLE_EBAY_API")
     ebay_client_id: str | None = Field(default=None, alias="EBAY_CLIENT_ID")
     ebay_client_secret: str | None = Field(default=None, alias="EBAY_CLIENT_SECRET")
+    ebay_sandbox_client_id: str | None = Field(default=None, alias="EBAY_SANDBOX_CLIENT_ID")
+    ebay_sandbox_client_secret: str | None = Field(default=None, alias="EBAY_SANDBOX_CLIENT_SECRET")
     ebay_use_sandbox: bool = Field(default=False, alias="EBAY_USE_SANDBOX")
     ebay_marketplace_id: str = Field(default="EBAY_GB", alias="EBAY_MARKETPLACE_ID")
     ebay_page_size: int = Field(default=50, alias="EBAY_PAGE_SIZE")
@@ -46,6 +48,25 @@ class Settings(BaseSettings):
     enable_provider_policy_checks: bool = Field(default=True, alias="ENABLE_PROVIDER_POLICY_CHECKS")
     disable_live_api_writes: bool = Field(default=True, alias="DISABLE_LIVE_API_WRITES")
 
+    @property
+    def resolved_ebay_client_id(self) -> str | None:
+        if self.ebay_use_sandbox:
+            return self.ebay_sandbox_client_id
+        return self.ebay_client_id
+
+    @property
+    def resolved_ebay_client_secret(self) -> str | None:
+        if self.ebay_use_sandbox:
+            return self.ebay_sandbox_client_secret
+        return self.ebay_client_secret
+
+    @staticmethod
+    def _strip_optional(value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
     @model_validator(mode="after")
     def validate_policy_and_limits(self) -> "Settings":
         positive_fields = {
@@ -69,13 +90,22 @@ class Settings(BaseSettings):
         if self.db_pool_min > self.db_pool_max:
             raise ValueError("DB_POOL_MIN cannot be greater than DB_POOL_MAX")
 
+        self.ebay_client_id = self._strip_optional(self.ebay_client_id)
+        self.ebay_client_secret = self._strip_optional(self.ebay_client_secret)
+        self.ebay_sandbox_client_id = self._strip_optional(self.ebay_sandbox_client_id)
+        self.ebay_sandbox_client_secret = self._strip_optional(self.ebay_sandbox_client_secret)
+
         if self.enable_ebay_api:
-            if self.ebay_client_id is not None:
-                self.ebay_client_id = self.ebay_client_id.strip()
-            if self.ebay_client_secret is not None:
-                self.ebay_client_secret = self.ebay_client_secret.strip()
-            if not self.ebay_client_id or not self.ebay_client_secret:
-                raise ValueError("EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required when ENABLE_EBAY_API=true")
+            if not self.resolved_ebay_client_id or not self.resolved_ebay_client_secret:
+                if self.ebay_use_sandbox:
+                    raise ValueError(
+                        "EBAY_SANDBOX_CLIENT_ID and EBAY_SANDBOX_CLIENT_SECRET are required when "
+                        "ENABLE_EBAY_API=true and EBAY_USE_SANDBOX=true"
+                    )
+                raise ValueError(
+                    "EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required when "
+                    "ENABLE_EBAY_API=true and EBAY_USE_SANDBOX=false"
+                )
             if self.ebay_requests_per_minute is None or self.ebay_requests_per_minute <= 0:
                 raise ValueError("EBAY_REQUESTS_PER_MINUTE must be a positive integer when ENABLE_EBAY_API=true")
 

@@ -73,11 +73,11 @@ def _request_with_retry(
 
 
 def _oauth_token(settings: Settings, client: httpx.Client, limiter: RateLimiter) -> str:
-    if not settings.ebay_client_id or not settings.ebay_client_secret:
-        raise ValueError("Missing eBay client credentials.")
-    basic = base64.b64encode(
-        f"{settings.ebay_client_id}:{settings.ebay_client_secret}".encode("utf-8")
-    ).decode("utf-8")
+    client_id = settings.resolved_ebay_client_id
+    client_secret = settings.resolved_ebay_client_secret
+    if not client_id or not client_secret:
+        raise ValueError("Missing eBay client credentials for the active environment.")
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Authorization": f"Basic {basic}",
@@ -94,7 +94,8 @@ def _oauth_token(settings: Settings, client: httpx.Client, limiter: RateLimiter)
         env_label = "sandbox" if settings.ebay_use_sandbox else "production"
         raise ValueError(
             f"eBay OAuth failed ({response.status_code}, {env_label}): {detail}. "
-            "Verify EBAY_CLIENT_ID/EBAY_CLIENT_SECRET match the same environment "
+            "Verify production (EBAY_CLIENT_ID/EBAY_CLIENT_SECRET) or sandbox "
+            "(EBAY_SANDBOX_CLIENT_ID/EBAY_SANDBOX_CLIENT_SECRET) credentials match EBAY_USE_SANDBOX "
             "(App ID + Client Secret from Developer Portal keys, not Cert ID)."
         )
     payload = response.json()

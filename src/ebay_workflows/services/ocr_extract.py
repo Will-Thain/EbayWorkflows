@@ -36,7 +36,10 @@ def extract_ocr_fields(image_path: str, engine: str = "pytesseract") -> dict[str
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    raw = pytesseract.image_to_string(thresh, config="--psm 6").strip()
+    try:
+        raw = pytesseract.image_to_string(thresh, config="--psm 6").strip()
+    except pytesseract.TesseractNotFoundError:
+        return {}
     if not raw:
         return {}
 

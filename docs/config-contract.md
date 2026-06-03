@@ -21,8 +21,11 @@ Define all required environment variables, defaults, and validation rules before
 ## eBay
 
 - `ENABLE_EBAY_API` (default `true`; set `false` to temporarily disable eBay live calls)
-- `EBAY_CLIENT_ID` (required when `ENABLE_EBAY_API=true`)
-- `EBAY_CLIENT_SECRET` (required when `ENABLE_EBAY_API=true`)
+- `EBAY_CLIENT_ID` (production App ID; required when `ENABLE_EBAY_API=true` and `EBAY_USE_SANDBOX=false`)
+- `EBAY_CLIENT_SECRET` (production Client Secret; required with production client ID above)
+- `EBAY_SANDBOX_CLIENT_ID` (sandbox App ID; required when `ENABLE_EBAY_API=true` and `EBAY_USE_SANDBOX=true`)
+- `EBAY_SANDBOX_CLIENT_SECRET` (sandbox Client Secret; required with sandbox client ID above)
+- `EBAY_USE_SANDBOX` (default `false`; selects which credential pair is used for OAuth and Browse)
 - `EBAY_MARKETPLACE_ID` (default `EBAY_GB`)
 - `EBAY_PAGE_SIZE` (default `50`)
 - `EBAY_MAX_PAGES_PER_RUN` (default `20`)

@@ -14,10 +14,13 @@
 3. set required environment variables from `.env.example`
 4. run DB migrations
 5. run `ebay-workflows validate-env`
+   - if warnings mention shell overrides, run `./scripts/clear-ebay-env-overrides.ps1` (stale `EBAY_*` env vars beat `.env`)
 6. verify eBay OAuth (production keys by default):
    `ebay-workflows ebay-auth-check`
    - use sandbox keys with `EBAY_USE_SANDBOX=true` in `.env`
-   - map **App ID (Client ID)** → `EBAY_CLIENT_ID` and **Client Secret** → `EBAY_CLIENT_SECRET` (not Cert ID)
+   - production: **App ID** → `EBAY_CLIENT_ID`, **Client Secret** → `EBAY_CLIENT_SECRET`
+   - sandbox: **App ID** → `EBAY_SANDBOX_CLIENT_ID`, **Client Secret** → `EBAY_SANDBOX_CLIENT_SECRET`
+   - set `EBAY_USE_SANDBOX=true` to use sandbox credentials (not Cert ID)
 7. run a dry-run workflow command to validate integration configuration
 7. initialize schema with `ebay-workflows init-db`
 8. set `DISABLE_LIVE_API_WRITES=false` in `.env` for local persistence tests
@@ -44,7 +47,10 @@
    `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
    - crops saved under `IMAGE_CACHE_DIR/crops`
-17. run bulk-lot multi-card detection (mock):
+17. live production pipeline (after production OAuth works):
+   `./scripts/run-live-pipeline.ps1 -MaxPages 1`
+   - requires Tesseract on PATH for meaningful OCR text; without it, OpenCV regions still run but OCR fields may be empty
+17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:
    `ebay-workflows phase6-detect-lots --use-real-detection`
