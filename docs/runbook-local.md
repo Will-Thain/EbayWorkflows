@@ -34,8 +34,8 @@
    `ebay-workflows sync-cardmarket`
 14. run Phase 3 price join:
    `ebay-workflows phase3-join-prices`
-15. run EV/confidence ranking:
-   `ebay-workflows phase4-rank`
+15. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
+   `ebay-workflows phase4-rank --hybrid`
 16. run OCR verification (mock evidence):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
     or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
