@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, WorkflowStep
+from .services.hybrid_scoring import compute_listing_score_hybrid
 
 
 def _now() -> datetime:
@@ -77,11 +78,12 @@ def _compute_listing_score(candidates: list[ListingCardCandidate], listing: List
     }
 
 
-def run_phase4_ranking(session: Session, settings: Settings) -> str:
+def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool = False) -> str:
+    scoring_version = "v2_hybrid" if use_hybrid else "v1"
     run = WorkflowRun(
         workflow_name=f"{settings.workflow_default_name}_phase4",
         status="running",
-        input_config_json={"source": "ev_ranking_v1"},
+        input_config_json={"source": f"ev_ranking_{scoring_version}"},
         started_at=_now(),
     )
     session.add(run)
@@ -107,7 +109,11 @@ def run_phase4_ranking(session: Session, settings: Settings) -> str:
 
         scored = 0
         for listing in listings:
-            calc = _compute_listing_score(by_listing.get(listing.id, []), listing)
+            listing_candidates = by_listing.get(listing.id, [])
+            if use_hybrid:
+                calc = compute_listing_score_hybrid(listing_candidates, listing)
+            else:
+                calc = _compute_listing_score(listing_candidates, listing)
             existing = session.execute(
                 select(ListingScore).where(ListingScore.listing_id == listing.id)
             ).scalar_one_or_none()
@@ -117,7 +123,7 @@ def run_phase4_ranking(session: Session, settings: Settings) -> str:
                 existing.confidence_score = calc["confidence_score"]
                 existing.risk_score = calc["risk_score"]
                 existing.rank_value = calc["rank_value"]
-                existing.scoring_version = "v1"
+                existing.scoring_version = scoring_version
                 existing.explanation_json = calc["explanation"]
                 existing.updated_at = _now()
             else:
@@ -129,7 +135,7 @@ def run_phase4_ranking(session: Session, settings: Settings) -> str:
                         confidence_score=calc["confidence_score"],
                         risk_score=calc["risk_score"],
                         rank_value=calc["rank_value"],
-                        scoring_version="v1",
+                        scoring_version=scoring_version,
                         explanation_json=calc["explanation"],
                         updated_at=_now(),
                     )

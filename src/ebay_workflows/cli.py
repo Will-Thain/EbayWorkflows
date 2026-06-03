@@ -244,7 +244,13 @@ def phase3_join_prices() -> None:
 
 
 @app.command("phase4-rank")
-def phase4_rank() -> None:
+def phase4_rank(
+    hybrid: bool = typer.Option(
+        True,
+        "--hybrid/--no-hybrid",
+        help="Use v2 hybrid confidence (title + OCR + embedding + price freshness)",
+    ),
+) -> None:
     """Run Milestone 4 EV/confidence scoring and ranking."""
     try:
         settings = Settings()
@@ -254,7 +260,7 @@ def phase4_rank() -> None:
 
     session_factory = build_session_factory(settings)
     with session_factory() as session:
-        run_id = run_phase4_ranking(session, settings)
+        run_id = run_phase4_ranking(session, settings, use_hybrid=hybrid)
     console.print("[bold green]Phase 4 ranking completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
