@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     image_allow_full_frame_fallback: bool = Field(default=False, alias="IMAGE_ALLOW_FULL_FRAME_FALLBACK")
     pipeline_max_image_workers: int = Field(default=4, alias="PIPELINE_MAX_IMAGE_WORKERS")
     phase1_skip_existing_listings: bool = Field(default=True, alias="PHASE1_SKIP_EXISTING_LISTINGS")
-    title_match_min_score_for_pricing: float = Field(default=0.92, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
+    title_match_min_score_for_pricing: float = Field(default=0.88, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
     title_match_min_score_non_mtg: float = Field(default=0.98, alias="TITLE_MATCH_MIN_SCORE_NON_MTG")
     cardmarket_max_unit_price_eur: float = Field(default=250.0, alias="CARDMARKET_MAX_UNIT_PRICE_EUR")
     ev_max_listing_cost_multiple: float = Field(default=10.0, alias="EV_MAX_LISTING_COST_MULTIPLE")

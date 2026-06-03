@@ -13,7 +13,7 @@ from ebay_workflows.services.listing_filters import is_bulk_lot_title, is_non_mt
 
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
-        title_match_min_score_for_pricing=0.92,
+        title_match_min_score_for_pricing=0.88,
         title_match_min_score_non_mtg=0.98,
         cardmarket_max_unit_price_eur=250.0,
         ev_max_listing_cost_multiple=10.0,

@@ -95,7 +95,7 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
         image_min_region_score=0.55,
         image_allow_full_frame_fallback=False,
         tesseract_cmd=None,
-        title_match_min_score_for_pricing=0.92,
+        title_match_min_score_for_pricing=0.88,
         title_match_min_score_non_mtg=0.98,
         cardmarket_max_unit_price_eur=250.0,
         ev_max_listing_cost_multiple=10.0,

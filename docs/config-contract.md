@@ -54,7 +54,7 @@ Define all required environment variables, defaults, and validation rules before
 - `PIPELINE_MAX_IMAGE_WORKERS` (default `4`; parallel workers for Phase 5/6 image analysis)
 - `PHASE1_SKIP_EXISTING_LISTINGS` (default `true`; skip eBay listings already stored by `external_listing_id`)
 - `TESSERACT_CMD` (optional; path to `tesseract.exe` on Windows)
-- `TITLE_MATCH_MIN_SCORE_FOR_PRICING` (default `0.92`; minimum fuzzy match score to attach Cardmarket prices)
+- `TITLE_MATCH_MIN_SCORE_FOR_PRICING` (default `0.88`; minimum fuzzy match score to attach Cardmarket prices)
 - `TITLE_MATCH_MIN_SCORE_NON_MTG` (default `0.98`; stricter threshold when listing title looks non-MTG)
 - `CARDMARKET_MAX_UNIT_PRICE_EUR` (default `250`; reject or cap outlier unit prices unless match is very strong)
 - `EV_MAX_LISTING_COST_MULTIPLE` (default `10`; cap rank EV relative to listing cost)
