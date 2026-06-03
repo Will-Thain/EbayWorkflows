@@ -1,7 +1,32 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
+
+_WINDOWS_TESSERACT_PATHS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+
+
+def configure_tesseract(tesseract_cmd: str | None = None) -> bool:
+    """Point pytesseract at an installed binary. Returns True when configured."""
+    import pytesseract  # type: ignore[import-not-found]
+
+    candidates: list[str] = []
+    if tesseract_cmd:
+        candidates.append(tesseract_cmd.strip())
+    on_path = shutil.which("tesseract")
+    if on_path:
+        candidates.append(on_path)
+    candidates.extend(_WINDOWS_TESSERACT_PATHS)
+
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return True
+    return False
 
 
 def _normalize_confidence(text: str) -> float:
@@ -11,7 +36,12 @@ def _normalize_confidence(text: str) -> float:
     return min(0.95, max(0.35, len(cleaned) / 40))
 
 
-def extract_ocr_fields(image_path: str, engine: str = "pytesseract") -> dict[str, tuple[str, float]]:
+def extract_ocr_fields(
+    image_path: str,
+    engine: str = "pytesseract",
+    *,
+    tesseract_cmd: str | None = None,
+) -> dict[str, tuple[str, float]]:
     """
     Extract title-like text from a card crop.
     Returns field_type -> (raw_text, confidence).
@@ -29,6 +59,9 @@ def extract_ocr_fields(image_path: str, engine: str = "pytesseract") -> dict[str
         import pytesseract  # type: ignore[import-not-found]
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("OCR requires opencv-python and pytesseract.") from exc
+
+    if not configure_tesseract(tesseract_cmd):
+        return {}
 
     image = cv2.imread(str(path))
     if image is None:

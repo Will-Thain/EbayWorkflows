@@ -24,6 +24,7 @@ def detect_lot_cards_from_image(
     crop_dir: str,
     *,
     ocr_engine: str = "pytesseract",
+    tesseract_cmd: str | None = None,
     max_cards: int = 12,
     min_area_ratio: float = 0.008,
 ) -> list[DetectedLotCard]:
@@ -42,7 +43,7 @@ def detect_lot_cards_from_image(
     detected: list[DetectedLotCard] = []
     for region in regions:
         crop_path = region.crop_path or image_path
-        fields = extract_ocr_fields(crop_path, engine=ocr_engine)
+        fields = extract_ocr_fields(crop_path, engine=ocr_engine, tesseract_cmd=tesseract_cmd)
         title_block = fields.get("title")
         if not title_block:
             continue

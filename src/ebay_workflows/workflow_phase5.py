@@ -199,7 +199,11 @@ def run_phase5_ocr_verification(
             best_confidence = 0.0
             for region in regions:
                 crop_path = region.crop_path or listing_image.local_path
-                fields = extract_ocr_fields(crop_path, engine=settings.ocr_engine)
+                fields = extract_ocr_fields(
+                    crop_path,
+                    engine=settings.ocr_engine,
+                    tesseract_cmd=settings.tesseract_cmd,
+                )
                 if not fields:
                     continue
                 title = _persist_region_detection(

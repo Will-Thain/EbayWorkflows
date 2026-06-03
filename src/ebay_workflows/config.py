@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     image_cache_dir: str = Field(alias="IMAGE_CACHE_DIR")
     image_download_timeout_ms: int = Field(default=20000, alias="IMAGE_DOWNLOAD_TIMEOUT_MS")
     ocr_engine: str = Field(default="paddleocr", alias="OCR_ENGINE")
+    tesseract_cmd: str | None = Field(default=None, alias="TESSERACT_CMD")
     faiss_index_path: str = Field(alias="FAISS_INDEX_PATH")
     faiss_top_k: int = Field(default=5, alias="FAISS_TOP_K")
     faiss_build_max_cards: int = Field(default=500, alias="FAISS_BUILD_MAX_CARDS")

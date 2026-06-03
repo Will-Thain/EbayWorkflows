@@ -285,6 +285,7 @@ def run_phase6_bulk_lot_detection(
                     listing_image.local_path,
                     crop_dir,
                     ocr_engine=settings.ocr_engine,
+                    tesseract_cmd=settings.tesseract_cmd,
                 )
                 payload = detected_lot_cards_to_payload(lot_cards)
                 d, o, _ = _process_lot_cards_for_image(
