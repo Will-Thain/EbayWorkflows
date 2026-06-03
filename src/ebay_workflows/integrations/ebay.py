@@ -9,8 +9,18 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from ..config import Settings
 
-EBAY_OAUTH_URL = "https://api.ebay.com/identity/v1/oauth2/token"
-EBAY_BROWSE_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope"
+EBAY_API_HOSTS = {
+    "production": "https://api.ebay.com",
+    "sandbox": "https://api.sandbox.ebay.com",
+}
+
+
+def _api_hosts(settings: Settings) -> tuple[str, str]:
+    host = EBAY_API_HOSTS["sandbox" if settings.ebay_use_sandbox else "production"]
+    oauth_url = f"{host}/identity/v1/oauth2/token"
+    browse_search_url = f"{host}/buy/browse/v1/item_summary/search"
+    return oauth_url, browse_search_url
 
 
 @dataclass
@@ -72,12 +82,21 @@ def _oauth_token(settings: Settings, client: httpx.Client, limiter: RateLimiter)
         "Content-Type": "application/x-www-form-urlencoded",
         "Authorization": f"Basic {basic}",
     }
+    oauth_url, _ = _api_hosts(settings)
     data = {
         "grant_type": "client_credentials",
-        "scope": "https://api.ebay.com/oauth/api_scope",
+        "scope": EBAY_OAUTH_SCOPE,
     }
     limiter.wait()
-    response = _request_with_retry(client, "POST", EBAY_OAUTH_URL, headers=headers, data=data)
+    response = client.post(oauth_url, headers=headers, data=data)
+    if response.status_code >= 400:
+        detail = response.text[:300]
+        env_label = "sandbox" if settings.ebay_use_sandbox else "production"
+        raise ValueError(
+            f"eBay OAuth failed ({response.status_code}, {env_label}): {detail}. "
+            "Verify EBAY_CLIENT_ID/EBAY_CLIENT_SECRET match the same environment "
+            "(App ID + Client Secret from Developer Portal keys, not Cert ID)."
+        )
     payload = response.json()
     token = payload.get("access_token")
     if not token:
@@ -118,6 +137,17 @@ def _extract_record(item: dict) -> ListingRecord:
     )
 
 
+def verify_ebay_credentials(settings: Settings) -> str:
+    """Obtain an OAuth token to verify client ID/secret and environment selection."""
+    if not settings.enable_ebay_api:
+        raise ValueError("ENABLE_EBAY_API is false.")
+    if settings.ebay_requests_per_minute is None:
+        raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
+    limiter = RateLimiter(settings.ebay_requests_per_minute)
+    with httpx.Client(timeout=30) as client:
+        return _oauth_token(settings, client, limiter)
+
+
 def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[ListingRecord]:
     if not settings.enable_ebay_api:
         return []
@@ -128,6 +158,8 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
     records: list[ListingRecord] = []
     page_size = settings.ebay_page_size
     offset = 0
+
+    _, browse_search_url = _api_hosts(settings)
 
     with httpx.Client(timeout=30) as client:
         token = _oauth_token(settings, client, limiter)
@@ -141,7 +173,7 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
             response = _request_with_retry(
                 client,
                 "GET",
-                EBAY_BROWSE_SEARCH_URL,
+                browse_search_url,
                 headers=headers,
                 params={
                     "q": query,
