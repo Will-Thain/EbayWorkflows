@@ -36,7 +36,7 @@ from ..scheduler_service import (
 )
 from .job_runner import JobRunner
 from .models_qt import GenericTableModel
-from .workflow_catalog import WORKFLOW_JOBS
+from .workflow_catalog import LONG_RUNNING_SCHEDULE_JOBS, WORKFLOW_JOBS
 
 
 def _format_dt(value: datetime | None) -> str:
@@ -177,6 +177,18 @@ class ScheduleEditorDialog(QDialog):
             run_at = run_at.astimezone(timezone.utc)
             if run_at <= datetime.now(timezone.utc):
                 QMessageBox.warning(self, "Validation", "One-time run must be in the future.")
+                return
+
+        if job_id in LONG_RUNNING_SCHEDULE_JOBS:
+            reply = QMessageBox.warning(
+                self,
+                "Long-running job",
+                f"{job_id} can run for many hours and needs GPU/network/OCR. "
+                "Scheduling it is discouraged; run manually from Workflows instead. Save anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
                 return
 
         try:

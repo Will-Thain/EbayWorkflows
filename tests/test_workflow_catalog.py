@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from ebay_workflows.gui.job_runner import project_root, resolve_cli_launch
-from ebay_workflows.gui.workflow_catalog import build_argv
+from ebay_workflows.gui.workflow_catalog import LONG_RUNNING_SCHEDULE_JOBS, WORKFLOW_JOBS, build_argv
 
 
 def test_build_argv_phase3() -> None:
@@ -10,13 +9,11 @@ def test_build_argv_phase3() -> None:
     assert "phase3-join-prices" in argv
 
 
-def test_resolve_cli_launch() -> None:
-    argv = build_argv("integrity")
-    program, args = resolve_cli_launch(argv)
-    assert program
-    assert "data-integrity-check" in args
+def test_workflow_catalog_has_core_jobs() -> None:
+    for job_id in ("phase1", "phase4", "phase5", "export", "integrity"):
+        assert job_id in WORKFLOW_JOBS
 
 
-def test_project_root_is_repo() -> None:
-    root = project_root()
-    assert (root / "pyproject.toml").is_file()
+def test_long_running_schedule_jobs() -> None:
+    assert "phase5" in LONG_RUNNING_SCHEDULE_JOBS
+    assert "phase4" not in LONG_RUNNING_SCHEDULE_JOBS

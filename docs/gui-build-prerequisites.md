@@ -100,7 +100,7 @@ After GUI-6 implements `run-due-schedules`:
 | GUI-2 | Workflows run now + JobRunner |
 | GUI-5 | Favourites polish (notes in DB tab) |
 | GUI-6 | Schedules + `run-due-schedules` + APScheduler in GUI |
-| GUI-7 | PyInstaller + Task Scheduler export helper (include PySide6 DLLs / `pyside6-deploy` if used) |
+| GUI-7 | `docs/gui-windows-scheduler.md`, `scripts/register-run-due-schedules-task.ps1`, `scripts/build-gui-exe.ps1` |
 
 ## Acceptance smoke test (GUI-0)
 

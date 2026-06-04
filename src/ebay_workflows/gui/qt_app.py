@@ -41,7 +41,13 @@ from .job_runner import JobRunner
 from .schedules_panel import SchedulesPanel
 from .progress_estimates import estimate_job_total, poll_job_progress
 from .workflow_catalog import WORKFLOW_JOBS
-from .workflow_monitor import elapsed_label, fetch_active_workflow, resolve_progress
+from .workflow_monitor import (
+    elapsed_label,
+    fetch_active_workflow,
+    fetch_dashboard_stats,
+    fetch_running_workflows,
+    resolve_progress,
+)
 from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
 from .db_browser import CURATED_QUERIES, run_curated_query
@@ -648,14 +654,45 @@ class MainWindow(QMainWindow):
 
         self._status = QLabel("")
         self.statusBar().addPermanentWidget(self._status, stretch=1)
+        self._status_poll = QTimer(self)
+        self._status_poll.setInterval(2000)
+        self._status_poll.timeout.connect(self._update_status)
+        self._status_poll.start()
         self._opportunities.refresh()
         self._update_status()
 
     def _update_status(self) -> None:
         count = len(self._opportunities._rows)
-        self._status.setText(
-            f"Listings shown: {count}  |  Image cache: {self._settings.image_cache_dir}"
-        )
+        parts = [
+            f"Listings shown: {count}",
+            f"Cache: {self._settings.image_cache_dir}",
+        ]
+        try:
+            with self._session_factory() as session:
+                stats = fetch_dashboard_stats(session)
+                parts.insert(0, f"DB: {stats.listing_count:,} listings · {stats.ranked_count:,} ranked")
+                if stats.running_count:
+                    running = fetch_running_workflows(session)
+                    if running:
+                        active = running[0]
+                        progress = resolve_progress(session, active)
+                        elapsed = elapsed_label(active.step)
+                        label = WORKFLOW_JOBS.get(active.job_id)
+                        name = label.label if label else active.job_id
+                        if progress:
+                            pct = progress.percent
+                            prog = f"{progress.current:,}/{progress.total:,} {progress.unit}"
+                            if pct is not None:
+                                prog = f"{pct}% ({prog})"
+                        else:
+                            prog = "starting…"
+                        parts.append(f"Running: {name} {prog} · {elapsed}")
+        except Exception:  # noqa: BLE001
+            pass
+        if self._job_runner.is_busy():
+            job = self._job_runner.current_job_id or "job"
+            parts.append(f"GUI process: {job}")
+        self._status.setText("  |  ".join(parts))
 
 
 def main() -> None:

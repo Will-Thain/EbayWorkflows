@@ -60,7 +60,21 @@ WORKFLOW_JOBS: dict[str, WorkflowJobDef] = {
     "integrity": WorkflowJobDef(
         "integrity", "Data integrity check", "short", _simple_phase("data-integrity-check")
     ),
+    "export": WorkflowJobDef(
+        "export",
+        "Export rankings (JSON)",
+        "short",
+        lambda p: [
+            "export-rankings",
+            "--limit",
+            str(int(p.get("limit", 50))),
+            "-o",
+            str(p.get("output", "./data/exports/ranked.json")),
+        ],
+    ),
 }
+
+LONG_RUNNING_SCHEDULE_JOBS = frozenset({"phase5", "phase6"})
 
 
 def build_argv(job_id: str, params: dict[str, Any] | None = None) -> list[str]:

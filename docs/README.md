@@ -32,6 +32,7 @@ The docs in this folder define:
 - `gui-application.md` - local desktop app spec (PySide6 / Qt 6; workflows, monitor, DB browse, match preview)
 - `gui-build-prerequisites.md` - pre-build checklist and locked defaults
 - `gui-operator-workflows.md` - example operator day-in-the-life flows
+- `gui-windows-scheduler.md` - Windows Task Scheduler for headless `run-due-schedules`
 - `data-dictionary.md` - field-level semantics and provenance definitions
 - `docs/adr/0001-tech-stack.md` - initial architecture decision record
 

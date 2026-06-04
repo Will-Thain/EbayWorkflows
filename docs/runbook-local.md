@@ -78,6 +78,8 @@
    - if `pip install -e ".[gui]"` fails with **WinError 32** on `ebay-workflows.exe`, stop other runs first:
      `Get-Process ebay-workflows -ErrorAction SilentlyContinue | Stop-Process -Force`
      then re-run `pip install -e ".[gui]"`, or use `python -m ebay_workflows.gui.qt_app` (scripts are optional)
+22. headless schedules (GUI closed): see `gui-windows-scheduler.md` or `.\scripts\register-run-due-schedules-task.ps1`
+23. optional standalone GUI `.exe`: `.\scripts\build-gui-exe.ps1` (requires `pip install pyinstaller`)
 
 ## First Execution
 

@@ -368,7 +368,7 @@ Bind nothing on the network.
 | **GUI-4** | Phase 1 / 5 / 6 in catalog with strong “long running” warnings |
 | **GUI-5** | Favourites (star, filter, notes) + `listing_favorites` model |
 | **GUI-6** | Schedules UI + `scheduled_jobs` + `run-due-schedules` CLI (implemented) |
-| **GUI-7** | Windows Task Scheduler export guide; PyInstaller `.exe` (bundle PySide6 Qt libs) |
+| **GUI-7** | `gui-windows-scheduler.md`, `register-run-due-schedules-task.ps1`, `build-gui-exe.ps1` (implemented) |
 
 Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual runs land before automation.
 
@@ -376,7 +376,7 @@ Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual ru
 
 ## Acceptance criteria
 
-1. Native desktop window with three tabs: Workflows, Opportunities, Database.
+1. Native desktop window with four tabs: Home, Opportunities, Workflows, Database.
 2. Operator can **start** at least phase 2, 3, and 4 from the UI and see live log output.
 3. Operator can **stop** a running child process; UI reflects stopped state.
 4. While a CLI phase runs, UI shows **running** step from DB and/or log activity within 5 s poll interval.
