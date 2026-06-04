@@ -11,6 +11,7 @@ from .config import Settings
 from .integrations.ebay import ListingRecord, fetch_listings
 from .models import Listing, ListingImage, WorkflowRun, WorkflowStep
 from .services.image_cache import download_to_cache
+from .services.progress_report import emit_progress
 
 
 def _now():
@@ -79,7 +80,11 @@ def run_phase1(
         image_rows = 0
         downloaded = 0
 
-        for record in records:
+        total_records = len(records)
+        if total_records:
+            emit_progress(0, total_records, unit="listings")
+
+        for index, record in enumerate(records, start=1):
             existing = session.execute(
                 select(Listing).where(Listing.external_listing_id == record.external_listing_id)
             ).scalar_one_or_none()
@@ -153,6 +158,12 @@ def run_phase1(
                     except Exception as exc:  # noqa: BLE001
                         img.download_status = "failed"
                         img.error_json = {"message": str(exc)}
+
+            if index % 5 == 0 or index == total_records:
+                emit_progress(index, total_records, unit="listings")
+
+        if download_images and image_rows:
+            emit_progress(downloaded, image_rows, unit="images")
 
         step.status = "succeeded"
         step.finished_at = _now()

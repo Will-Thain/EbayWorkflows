@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QProgressBar,
     QSpinBox,
     QMainWindow,
     QMessageBox,
@@ -34,7 +35,9 @@ from sqlalchemy import select
 from ..config import Settings
 from ..db import build_session_factory
 from ..models import ListingImage, WorkflowStep
+from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .job_runner import JobRunner
+from .progress_estimates import estimate_job_total, poll_job_progress
 from .workflow_catalog import WORKFLOW_JOBS
 from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
@@ -338,15 +341,19 @@ class DatabaseTab(QWidget):
 class WorkflowsTab(QWidget):
     def __init__(
         self,
+        settings: Settings,
         session_factory,
         job_runner: JobRunner,
         on_ranking_refresh,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self._settings = settings
         self._session_factory = session_factory
         self._runner = job_runner
         self._on_ranking_refresh = on_ranking_refresh
+        self._active_job_id: str | None = None
+        self._progress_snapshot = None
 
         layout = QVBoxLayout(self)
 
@@ -383,6 +390,16 @@ class WorkflowsTab(QWidget):
         self._phase_status = QLabel("Idle")
         layout.addWidget(self._phase_status)
 
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFormat("—")
+        layout.addWidget(self._progress_bar)
+
+        self._progress_label = QLabel("")
+        layout.addWidget(self._progress_label)
+
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setPlaceholderText("CLI output appears here…")
@@ -398,12 +415,34 @@ class WorkflowsTab(QWidget):
 
     def _append_log(self, line: str) -> None:
         self._log.appendPlainText(line)
+        snapshot = parse_progress_line(line)
+        if snapshot:
+            self._apply_progress(snapshot)
+
+    def _reset_progress(self) -> None:
+        self._progress_snapshot = None
+        self._progress_bar.setRange(0, 0)
+        self._progress_bar.setFormat("Starting…")
+        self._progress_label.setText("")
+
+    def _apply_progress(self, snapshot) -> None:
+        self._progress_snapshot = snapshot
+        if snapshot.total > 0:
+            self._progress_bar.setRange(0, snapshot.total)
+            self._progress_bar.setValue(min(snapshot.current, snapshot.total))
+            pct = snapshot.percent
+            self._progress_bar.setFormat(f"{pct}%" if pct is not None else "")
+        else:
+            self._progress_bar.setRange(0, 0)
+            self._progress_bar.setFormat("…")
+        self._progress_label.setText(format_progress_label(snapshot))
 
     def _job_params(self, job_id: str) -> dict:
         if job_id == "phase1":
             return {
                 "query": self._query_edit.text().strip() or "magic the gathering",
                 "max_pages": self._max_pages.value(),
+                "page_size": self._settings.ebay_page_size,
                 "download_images": True,
             }
         if job_id == "phase2":
@@ -432,15 +471,39 @@ class WorkflowsTab(QWidget):
         return reply == QMessageBox.StandardButton.Yes
 
     def _on_job_started(self, job_id: str) -> None:
+        self._active_job_id = job_id
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._phase_status.setText(f"Running: {job_id}")
+        self._reset_progress()
+        try:
+            with self._session_factory() as session:
+                estimate = estimate_job_total(session, job_id, self._job_params(job_id))
+            if estimate:
+                total, unit = estimate
+                self._progress_bar.setRange(0, total)
+                self._progress_bar.setValue(0)
+                self._progress_bar.setFormat("0%")
+                self._progress_label.setText(f"0 / {total:,} {unit}")
+        except Exception:  # noqa: BLE001
+            pass
         self._poll.start()
 
     def _on_job_finished(self, exit_code: int, job_id: str) -> None:
+        self._active_job_id = None
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._poll.stop()
+        if self._progress_snapshot and self._progress_snapshot.total > 0:
+            done = self._progress_snapshot
+            self._progress_bar.setRange(0, done.total)
+            self._progress_bar.setValue(done.total)
+            self._progress_bar.setFormat("100%")
+            self._progress_label.setText(format_progress_label(done))
+        else:
+            self._progress_bar.setRange(0, 100)
+            self._progress_bar.setValue(100 if exit_code == 0 else 0)
+            self._progress_bar.setFormat("Done" if exit_code == 0 else "Failed")
         self._poll_db_status()
         if job_id in ("phase4", "phase3", "phase2"):
             self._on_ranking_refresh()
@@ -460,6 +523,13 @@ class WorkflowsTab(QWidget):
                     .order_by(WorkflowStep.started_at.desc())
                     .limit(1)
                 ).scalar_one_or_none()
+                if self._active_job_id and self._progress_snapshot is None:
+                    polled = poll_job_progress(session, self._active_job_id)
+                    if polled:
+                        current, total, unit = polled
+                        self._apply_progress(
+                            ProgressSnapshot(current=current, total=total, unit=unit)
+                        )
         except Exception:  # noqa: BLE001
             return
         if step:
@@ -488,6 +558,7 @@ class MainWindow(QMainWindow):
         self._opportunities = OpportunitiesTab(settings, self._session_factory)
         tabs.addTab(self._opportunities, "Opportunities")
         self._workflows = WorkflowsTab(
+            settings,
             self._session_factory,
             self._job_runner,
             on_ranking_refresh=self._opportunities.refresh,

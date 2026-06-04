@@ -28,6 +28,7 @@ from .services.bulk_lot_detection import (
     detected_lot_cards_to_payload,
 )
 from .services.ev_guardrails import cap_ev_adjusted, sanitize_unit_price, title_match_allowed_for_pricing
+from .services.progress_report import emit_progress
 from .services.listing_filters import is_bulk_lot_title
 
 
@@ -333,8 +334,8 @@ def run_phase6_bulk_lot_detection(
                 for index, future in enumerate(as_completed(futures), start=1):
                     image_id, payload = future.result()
                     detection_results[image_id] = payload
-                    if index % 10 == 0 or index == total:
-                        print(f"Phase 6 bulk detection: {index}/{total}")
+                    if index % 5 == 0 or index == total:
+                        emit_progress(index, total, unit="images")
 
             by_image_id = {str(img.id): img for img in eligible}
             for image_id, payload in detection_results.items():

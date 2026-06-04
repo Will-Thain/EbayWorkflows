@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import title_match_allowed_for_pricing
+from .services.progress_report import emit_progress
 
 
 def _now() -> datetime:
@@ -115,7 +116,11 @@ def run_phase2_title_match(
 
         matched_listings = 0
         candidate_rows = 0
-        for listing in listings:
+        total_listings = len(listings)
+        if total_listings:
+            emit_progress(0, total_listings, unit="listings")
+
+        for index, listing in enumerate(listings, start=1):
             session.execute(delete(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing.id))
             matches = _best_matches(listing.title, cards, top_k=top_k)
             rank = 1
@@ -146,6 +151,9 @@ def run_phase2_title_match(
                 candidate_rows += 1
             if matches:
                 matched_listings += 1
+
+            if index % 3 == 0 or index == total_listings:
+                emit_progress(index, total_listings, unit="listings")
 
         step.status = "succeeded"
         step.finished_at = _now()

@@ -116,7 +116,7 @@ Combine **three signals** (no new server required):
 
 | Signal | Mechanism | UI element |
 |--------|-----------|------------|
-| **Subprocess log** | Queue-drained stdout/stderr | Scrolling log, auto-scroll toggle |
+| **Subprocess log** | Queue-drained stdout/stderr | Scrolling log; lines matching `ebay-workflows-progress N/M unit` update **%** and **N / M** label |
 | **DB step status** | Poll every 2–5 s: `SELECT * FROM workflow_steps WHERE status = 'running' ORDER BY started_at DESC` | Phase badge: `Phase 3 running…` |
 | **Step metrics** | On `status = 'succeeded'`, show `metrics_json` (e.g. `listings_inserted`, `images_downloaded`) | Summary chips below log |
 
