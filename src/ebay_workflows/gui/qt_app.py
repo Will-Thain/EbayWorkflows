@@ -5,7 +5,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
+    QSpinBox,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -31,7 +33,9 @@ from sqlalchemy import select
 
 from ..config import Settings
 from ..db import build_session_factory
-from ..models import ListingImage
+from ..models import ListingImage, WorkflowStep
+from .job_runner import JobRunner
+from .workflow_catalog import WORKFLOW_JOBS
 from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
 from .db_browser import CURATED_QUERIES, run_curated_query
@@ -331,14 +335,135 @@ class DatabaseTab(QWidget):
         QMessageBox.information(self, "Export", f"Saved to {path}")
 
 
-class PlaceholderTab(QWidget):
-    def __init__(self, message: str, parent: QWidget | None = None) -> None:
+class WorkflowsTab(QWidget):
+    def __init__(
+        self,
+        session_factory,
+        job_runner: JobRunner,
+        on_ranking_refresh,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._session_factory = session_factory
+        self._runner = job_runner
+        self._on_ranking_refresh = on_ranking_refresh
+
         layout = QVBoxLayout(self)
-        label = QLabel(message)
-        label.setWordWrap(True)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Job:"))
+        self._job_combo = QComboBox()
+        for job_id, job in WORKFLOW_JOBS.items():
+            self._job_combo.addItem(f"{job.label} ({job.duration_tier})", job_id)
+        row.addWidget(self._job_combo, stretch=1)
+        layout.addLayout(row)
+
+        params = QHBoxLayout()
+        params.addWidget(QLabel("Query (phase 1):"))
+        self._query_edit = QLineEdit("magic the gathering")
+        params.addWidget(self._query_edit, stretch=1)
+        params.addWidget(QLabel("Max pages:"))
+        self._max_pages = QSpinBox()
+        self._max_pages.setRange(1, 200)
+        self._max_pages.setValue(20)
+        params.addWidget(self._max_pages)
+        layout.addLayout(params)
+
+        buttons = QHBoxLayout()
+        self._start_btn = QPushButton("Start")
+        self._start_btn.clicked.connect(self._start_job)
+        buttons.addWidget(self._start_btn)
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.clicked.connect(self._runner.stop)
+        self._stop_btn.setEnabled(False)
+        buttons.addWidget(self._stop_btn)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+        self._phase_status = QLabel("Idle")
+        layout.addWidget(self._phase_status)
+
+        self._log = QPlainTextEdit()
+        self._log.setReadOnly(True)
+        self._log.setPlaceholderText("CLI output appears here…")
+        layout.addWidget(self._log, stretch=1)
+
+        self._runner.log_line.connect(self._append_log)
+        self._runner.job_started.connect(self._on_job_started)
+        self._runner.job_finished.connect(self._on_job_finished)
+
+        self._poll = QTimer(self)
+        self._poll.setInterval(3000)
+        self._poll.timeout.connect(self._poll_db_status)
+
+    def _append_log(self, line: str) -> None:
+        self._log.appendPlainText(line)
+
+    def _job_params(self, job_id: str) -> dict:
+        if job_id == "phase1":
+            return {
+                "query": self._query_edit.text().strip() or "magic the gathering",
+                "max_pages": self._max_pages.value(),
+                "download_images": True,
+            }
+        if job_id == "phase2":
+            return {"top_k": 3}
+        if job_id == "phase4":
+            return {"hybrid": True}
+        return {}
+
+    def _start_job(self) -> None:
+        job_id = str(self._job_combo.currentData())
+        if job_id in ("phase5", "phase6") and self._confirm_long_job(job_id) is False:
+            return
+        try:
+            self._runner.start(job_id, self._job_params(job_id))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Start failed", str(exc))
+
+    def _confirm_long_job(self, job_id: str) -> bool:
+        reply = QMessageBox.warning(
+            self,
+            "Long-running job",
+            f"{job_id} may run for hours and needs network/Tesseract for OCR. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _on_job_started(self, job_id: str) -> None:
+        self._start_btn.setEnabled(False)
+        self._stop_btn.setEnabled(True)
+        self._phase_status.setText(f"Running: {job_id}")
+        self._poll.start()
+
+    def _on_job_finished(self, exit_code: int, job_id: str) -> None:
+        self._start_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        self._poll.stop()
+        self._poll_db_status()
+        if job_id in ("phase4", "phase3", "phase2"):
+            self._on_ranking_refresh()
+        if exit_code != 0:
+            self._phase_status.setText(f"Finished {job_id} with errors (exit {exit_code})")
+        else:
+            self._phase_status.setText(f"Finished {job_id} successfully")
+
+    def _poll_db_status(self) -> None:
+        if not self._runner.is_busy():
+            return
+        try:
+            with self._session_factory() as session:
+                step = session.execute(
+                    select(WorkflowStep)
+                    .where(WorkflowStep.status == "running")
+                    .order_by(WorkflowStep.started_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+        except Exception:  # noqa: BLE001
+            return
+        if step:
+            self._phase_status.setText(f"Running: {step.step_name} (phase {step.phase_number})")
 
 
 class MainWindow(QMainWindow):
@@ -357,13 +482,17 @@ class MainWindow(QMainWindow):
         self._settings = settings
         self._session_factory = build_session_factory(settings)
 
+        self._job_runner = JobRunner(self)
+
         tabs = QTabWidget()
         self._opportunities = OpportunitiesTab(settings, self._session_factory)
         tabs.addTab(self._opportunities, "Opportunities")
-        tabs.addTab(
-            PlaceholderTab("Workflows (start/stop, logs, schedules) — planned in GUI-2 / GUI-6."),
-            "Workflows",
+        self._workflows = WorkflowsTab(
+            self._session_factory,
+            self._job_runner,
+            on_ranking_refresh=self._opportunities.refresh,
         )
+        tabs.addTab(self._workflows, "Workflows")
         tabs.addTab(DatabaseTab(self._session_factory), "Database")
         self.setCentralWidget(tabs)
 

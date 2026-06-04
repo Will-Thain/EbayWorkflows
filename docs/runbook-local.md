@@ -70,10 +70,14 @@
 20. run resumable full pipeline (skips completed phases by default):
    `ebay-workflows run-resumable-pipeline --query "mtg lot" --mock-input-file "samples/mock_listings.json" --mock-ocr-file "samples/mock_ocr_results.json" --mock-lot-file "samples/mock_lot_detections.json"`
 21. desktop GUI — **PySide6** (Opportunities + favourites; requires phase 4 scores):
-   `pip install -e ".[gui]"`  (installs `pyside6`)
+   `pip install -e ".[gui]"`  (installs `pyside6` and console scripts)
    `ebay-workflows init-db`  (creates `listing_favorites` / `scheduled_jobs` if missing)
    `ebay-workflows-gui`
+   - same app without the script: `python -m ebay_workflows.gui.qt_app`
    - entrypoint: `ebay_workflows.gui.qt_app` (Qt 6 / PySide6)
+   - if `pip install -e ".[gui]"` fails with **WinError 32** on `ebay-workflows.exe`, stop other runs first:
+     `Get-Process ebay-workflows -ErrorAction SilentlyContinue | Stop-Process -Force`
+     then re-run `pip install -e ".[gui]"`, or use `python -m ebay_workflows.gui.qt_app` (scripts are optional)
 
 ## First Execution
 
