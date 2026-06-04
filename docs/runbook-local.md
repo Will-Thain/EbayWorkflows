@@ -69,6 +69,11 @@
    `pytest -q`
 20. run resumable full pipeline (skips completed phases by default):
    `ebay-workflows run-resumable-pipeline --query "mtg lot" --mock-input-file "samples/mock_listings.json" --mock-ocr-file "samples/mock_ocr_results.json" --mock-lot-file "samples/mock_lot_detections.json"`
+21. desktop GUI — **PySide6** (Opportunities + favourites; requires phase 4 scores):
+   `pip install -e ".[gui]"`  (installs `pyside6`)
+   `ebay-workflows init-db`  (creates `listing_favorites` / `scheduled_jobs` if missing)
+   `ebay-workflows-gui`
+   - entrypoint: `ebay_workflows.gui.qt_app` (Qt 6 / PySide6)
 
 ## First Execution
 

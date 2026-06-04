@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import Listing, ListingCardCandidate, ListingScore
+from ..models import Listing, ListingCardCandidate, ListingFavorite, ListingScore
 
 
 @dataclass(slots=True)
@@ -28,6 +28,7 @@ class RankedListingRow:
     scoring_version: str
     top_card_name: str | None
     top_card_match_score: float | None
+    is_favorited: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,25 +47,31 @@ class RankedListingRow:
             "scoring_version": self.scoring_version,
             "top_card_name": self.top_card_name,
             "top_card_match_score": self.top_card_match_score,
+            "is_favorited": self.is_favorited,
         }
 
 
-def fetch_ranked_listings(session: Session, *, limit: int = 50) -> list[RankedListingRow]:
-    rows = (
-        session.execute(
-            select(Listing)
-            .join(ListingScore, ListingScore.listing_id == Listing.id)
-            .options(
-                joinedload(Listing.score),
-                joinedload(Listing.card_candidates).joinedload(ListingCardCandidate.scryfall_card),
-            )
-            .order_by(ListingScore.rank_value.desc())
-            .limit(limit)
+def fetch_ranked_listings(
+    session: Session,
+    *,
+    limit: int = 50,
+    favorites_only: bool = False,
+) -> list[RankedListingRow]:
+    stmt = (
+        select(Listing)
+        .join(ListingScore, ListingScore.listing_id == Listing.id)
+        .options(
+            joinedload(Listing.score),
+            joinedload(Listing.card_candidates).joinedload(ListingCardCandidate.scryfall_card),
         )
-        .unique()
-        .scalars()
-        .all()
+        .order_by(ListingScore.rank_value.desc())
+        .limit(limit)
     )
+    if favorites_only:
+        stmt = stmt.join(ListingFavorite, ListingFavorite.listing_id == Listing.id)
+
+    rows = session.execute(stmt).unique().scalars().all()
+    favorite_ids = set(session.scalars(select(ListingFavorite.listing_id)).all())
 
     ranked: list[RankedListingRow] = []
     for index, listing in enumerate(rows, start=1):
@@ -100,6 +107,7 @@ def fetch_ranked_listings(session: Session, *, limit: int = 50) -> list[RankedLi
                 scoring_version=score.scoring_version,
                 top_card_name=top_name,
                 top_card_match_score=top_match,
+                is_favorited=listing.id in favorite_ids,
             )
         )
 

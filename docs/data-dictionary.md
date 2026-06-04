@@ -47,6 +47,28 @@ Provide clear semantic definitions for key persisted fields and provenance requi
 - `scoring_version`: scoring formula/config version
 - `explanation_json`: structured explanation payload for auditability
 
+## Listing Favourites (GUI)
+
+- `listing_id`: favourited listing (one row per listing)
+- `note`: optional operator comment (short text)
+- `favorited_at`: when the star was set
+
+## Scheduled Jobs (GUI / automation)
+
+- `name`: operator label for the schedule
+- `job_id`: workflow catalog key (`phase1`, `phase4`, …)
+- `job_params_json`: CLI parameters snapshot (query, max_pages, flags)
+- `schedule_type`: `interval`, `daily`, or `once`
+- `interval_hours`: hours between runs (interval type)
+- `daily_at`: wall-clock time for daily runs
+- `run_at`: absolute timestamp for one-shot runs
+- `timezone`: IANA timezone name for daily/once display
+- `enabled`: whether the schedule is active
+- `catch_up_missed`: run once after downtime if true; otherwise skip missed windows
+- `next_run_at` / `last_run_at`: scheduler bookkeeping (UTC)
+- `last_run_status`: `succeeded`, `failed`, `skipped_overlap`, `skipped_disabled`
+- `last_error`: short error message from last headless run
+
 ## Cardmarket Bulk Source Metadata (Recommended)
 
 - `source_file_path`: local path to imported Cardmarket bulk file

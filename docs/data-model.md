@@ -153,6 +153,36 @@ Indexes:
 - `explanation_json` (jsonb)
 - `updated_at` (timestamptz default now)
 
+## `listing_favorites` (GUI operator metadata)
+
+- `listing_id` (uuid, pk, fk -> listings.id, on delete cascade)
+- `note` (text, nullable)
+- `favorited_at` (timestamptz default now)
+
+Single-operator local use: one favourite row per listing. Used by the desktop app for starred listings and “favourites only” filters.
+
+## `scheduled_jobs` (GUI / scheduler automation)
+
+- `id` (uuid, pk)
+- `name` (text) — operator label, e.g. “Nightly ingest”
+- `job_id` (text) — key into workflow catalog (`phase1`, `phase4`, `pipeline`, …)
+- `job_params_json` (jsonb) — CLI args snapshot (query, max_pages, flags)
+- `schedule_type` (text: `interval` | `daily` | `once`)
+- `interval_hours` (numeric, nullable) — for `interval`, e.g. 24
+- `daily_at` (time, nullable) — local wall-clock time for `daily`
+- `run_at` (timestamptz, nullable) — for `once`
+- `timezone` (text, default operator TZ or `UTC`)
+- `enabled` (boolean, default true)
+- `catch_up_missed` (boolean, default false)
+- `next_run_at` (timestamptz, nullable)
+- `last_run_at` (timestamptz, nullable)
+- `last_run_status` (text, nullable: succeeded | failed | skipped_overlap | skipped_disabled)
+- `last_error` (text, nullable)
+- `created_at` / `updated_at` (timestamptz)
+
+Indexes:
+- btree (`enabled`, `next_run_at`) for due-job queries
+
 ## Data Retention and Lifecycle
 
 - keep raw integration payloads for reproducibility where allowed

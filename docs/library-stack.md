@@ -46,3 +46,11 @@ OCR fields (title, set code, collector number) provide high-value disambiguation
 - evaluate OCR-only, embedding-only, and hybrid performance per release
 - prefer deterministic post-processing over opaque heuristic drift
 
+## Desktop GUI (operator application)
+
+- **UI framework:** `PySide6` (Qt 6) — native window, `QTableView`, `QProcess`, `QTimer`
+- **Default style:** Qt **Fusion**; optional dark palette via `qdarktheme` or custom `QPalette`
+- **Not used for GUI:** Tkinter, Streamlit, Electron (see `gui-application.md`)
+- **Scheduling (in-app):** `apscheduler` (GUI-6); headless: `ebay-workflows run-due-schedules` + Windows Task Scheduler
+- **Packaging:** PyInstaller with PySide6 Qt libraries bundled
+

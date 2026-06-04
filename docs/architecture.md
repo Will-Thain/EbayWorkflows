@@ -2,7 +2,7 @@
 
 ## High-Level Architecture
 
-The application is a local CLI orchestration system with a PostgreSQL backing store and phase-oriented workers.
+The application is a local CLI orchestration system with a PostgreSQL backing store and phase-oriented workers. A **desktop GUI** (PySide6 / Qt 6) is specified for operator review, job control, and scheduling; see `gui-application.md`.
 
 Core components:
 
@@ -38,9 +38,17 @@ Core components:
    - PostgreSQL repositories and migrations
    - optional local filesystem cache for images/artifacts
 
+7. **Desktop GUI (PySide6)**
+   - `QProcess` orchestration of CLI phases (start/stop, log tail)
+   - Opportunities viewer (ranked listings, favourites, image preview)
+   - Database browser (curated read-only queries)
+   - schedule editor backed by `scheduled_jobs` (see `gui-application.md`)
+   - must not import torch/OpenCLIP/OCR; heavy phases stay in child CLI processes
+
 ## Module Boundaries
 
 - `cli`: command parsing and output formatting
+- `gui`: PySide6 application (`qt_app`, Qt models, `QProcess` job runner; shared `favorites`, `workflow_catalog`)
 - `workflows`: phase graph, orchestration, status transitions
 - `integrations`: typed clients for eBay/Scryfall/Cardmarket
 - `image`: download, OpenCV preprocessing, detection, OCR

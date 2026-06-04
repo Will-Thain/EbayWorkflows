@@ -32,6 +32,7 @@ Build a local CLI + PostgreSQL workflow engine that:
 ### In Scope (Initial Program)
 
 - CLI-driven workflow orchestration
+- local desktop GUI (PySide6) for review, favourites, and workflow control (see `gui-application.md`)
 - Local PostgreSQL persistence
 - eBay listing metadata + image URL ingestion
 - local image caching and processing pipeline
@@ -42,7 +43,7 @@ Build a local CLI + PostgreSQL workflow engine that:
 
 ### Out of Scope (Initial Program)
 
-- hosted multi-user web UI
+- hosted multi-user web UI (see `gui-application.md` for a proposed **local desktop** read-only app)
 - automatic buy actions
 - payment/account automation
 - non-MTG domains

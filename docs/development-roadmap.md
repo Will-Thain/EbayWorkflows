@@ -62,6 +62,18 @@ Exit criteria:
 Exit criteria:
 - bulk listings produce multi-card candidate sets with EV estimate
 
+## Milestone 6: Desktop GUI (PySide6)
+
+- Qt 6 main window with Opportunities, Workflows, and Database tabs
+- favourites and ranked listing preview with cached images
+- `QProcess` start/stop for CLI phases; schedule editor + `run-due-schedules`
+
+Exit criteria:
+- operator can review top listings and manage favourites without CLI
+- operator can start/stop phase 2–4 and see logs in-app
+
+See `gui-application.md` and `gui-build-prerequisites.md`.
+
 ## Testing Strategy
 
 - unit tests for matching/scoring math
