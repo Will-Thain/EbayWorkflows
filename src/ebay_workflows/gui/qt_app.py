@@ -30,15 +30,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from sqlalchemy import select
-
 from ..config import Settings
 from ..db import build_session_factory
-from ..models import ListingImage, WorkflowStep
+from ..models import ListingImage
 from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
+from .dashboard_tab import DashboardTab
 from .job_runner import JobRunner
+from .schedules_panel import SchedulesPanel
 from .progress_estimates import estimate_job_total, poll_job_progress
 from .workflow_catalog import WORKFLOW_JOBS
+from .workflow_monitor import elapsed_label, fetch_active_workflow, resolve_progress
 from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
 from .db_browser import CURATED_QUERIES, run_curated_query
@@ -353,9 +354,14 @@ class WorkflowsTab(QWidget):
         self._runner = job_runner
         self._on_ranking_refresh = on_ranking_refresh
         self._active_job_id: str | None = None
+        self._monitored_step_id: str | None = None
+        self._last_external_job_id: str | None = None
         self._progress_snapshot = None
 
         layout = QVBoxLayout(self)
+        inner_tabs = QTabWidget()
+        run_now = QWidget()
+        run_layout = QVBoxLayout(run_now)
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Job:"))
@@ -363,7 +369,7 @@ class WorkflowsTab(QWidget):
         for job_id, job in WORKFLOW_JOBS.items():
             self._job_combo.addItem(f"{job.label} ({job.duration_tier})", job_id)
         row.addWidget(self._job_combo, stretch=1)
-        layout.addLayout(row)
+        run_layout.addLayout(row)
 
         params = QHBoxLayout()
         params.addWidget(QLabel("Query (phase 1):"))
@@ -374,7 +380,7 @@ class WorkflowsTab(QWidget):
         self._max_pages.setRange(1, 200)
         self._max_pages.setValue(20)
         params.addWidget(self._max_pages)
-        layout.addLayout(params)
+        run_layout.addLayout(params)
 
         buttons = QHBoxLayout()
         self._start_btn = QPushButton("Start")
@@ -385,33 +391,38 @@ class WorkflowsTab(QWidget):
         self._stop_btn.setEnabled(False)
         buttons.addWidget(self._stop_btn)
         buttons.addStretch()
-        layout.addLayout(buttons)
+        run_layout.addLayout(buttons)
 
         self._phase_status = QLabel("Idle")
-        layout.addWidget(self._phase_status)
+        run_layout.addWidget(self._phase_status)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(0)
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setFormat("—")
-        layout.addWidget(self._progress_bar)
+        run_layout.addWidget(self._progress_bar)
 
         self._progress_label = QLabel("")
-        layout.addWidget(self._progress_label)
+        run_layout.addWidget(self._progress_label)
 
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setPlaceholderText("CLI output appears here…")
-        layout.addWidget(self._log, stretch=1)
+        run_layout.addWidget(self._log, stretch=1)
+
+        inner_tabs.addTab(run_now, "Run now")
+        inner_tabs.addTab(SchedulesPanel(session_factory, job_runner), "Schedules")
+        layout.addWidget(inner_tabs)
 
         self._runner.log_line.connect(self._append_log)
         self._runner.job_started.connect(self._on_job_started)
         self._runner.job_finished.connect(self._on_job_finished)
 
         self._poll = QTimer(self)
-        self._poll.setInterval(3000)
-        self._poll.timeout.connect(self._poll_db_status)
+        self._poll.setInterval(2000)
+        self._poll.timeout.connect(self._poll_workflow_status)
+        self._poll.start()
 
     def _append_log(self, line: str) -> None:
         self._log.appendPlainText(line)
@@ -487,13 +498,11 @@ class WorkflowsTab(QWidget):
                 self._progress_label.setText(f"0 / {total:,} {unit}")
         except Exception:  # noqa: BLE001
             pass
-        self._poll.start()
 
     def _on_job_finished(self, exit_code: int, job_id: str) -> None:
         self._active_job_id = None
-        self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._poll.stop()
+        self._stop_btn.setToolTip("")
         if self._progress_snapshot and self._progress_snapshot.total > 0:
             done = self._progress_snapshot
             self._progress_bar.setRange(0, done.total)
@@ -504,36 +513,98 @@ class WorkflowsTab(QWidget):
             self._progress_bar.setRange(0, 100)
             self._progress_bar.setValue(100 if exit_code == 0 else 0)
             self._progress_bar.setFormat("Done" if exit_code == 0 else "Failed")
-        self._poll_db_status()
+        self._poll_workflow_status()
         if job_id in ("phase4", "phase3", "phase2"):
             self._on_ranking_refresh()
-        if exit_code != 0:
-            self._phase_status.setText(f"Finished {job_id} with errors (exit {exit_code})")
-        else:
-            self._phase_status.setText(f"Finished {job_id} successfully")
+        if not self._monitored_step_id:
+            self._start_btn.setEnabled(True)
+        if not self._runner.is_busy() and self._monitored_step_id is None:
+            if exit_code != 0:
+                self._phase_status.setText(f"Finished {job_id} with errors (exit {exit_code})")
+            else:
+                self._phase_status.setText(f"Finished {job_id} successfully")
 
-    def _poll_db_status(self) -> None:
-        if not self._runner.is_busy():
+    def _select_job_combo(self, job_id: str) -> None:
+        idx = self._job_combo.findData(job_id)
+        if idx >= 0:
+            self._job_combo.setCurrentIndex(idx)
+
+    def _on_external_finished(self, job_id: str | None) -> None:
+        self._monitored_step_id = None
+        self._last_external_job_id = None
+        if self._runner.is_busy():
             return
+        self._start_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.setToolTip("")
+        self._phase_status.setText("Idle")
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(100)
+        self._progress_bar.setFormat("Done")
+        if job_id in ("phase4", "phase3", "phase2"):
+            self._on_ranking_refresh()
+
+    def _poll_workflow_status(self) -> None:
+        local_busy = self._runner.is_busy()
+        active = None
         try:
             with self._session_factory() as session:
-                step = session.execute(
-                    select(WorkflowStep)
-                    .where(WorkflowStep.status == "running")
-                    .order_by(WorkflowStep.started_at.desc())
-                    .limit(1)
-                ).scalar_one_or_none()
-                if self._active_job_id and self._progress_snapshot is None:
-                    polled = poll_job_progress(session, self._active_job_id)
-                    if polled:
-                        current, total, unit = polled
-                        self._apply_progress(
-                            ProgressSnapshot(current=current, total=total, unit=unit)
+                active = fetch_active_workflow(session)
+                if active is None:
+                    if self._monitored_step_id:
+                        finished_job = self._last_external_job_id
+                        self._on_external_finished(finished_job)
+                    elif not local_busy and self._phase_status.text().startswith("External:"):
+                        self._phase_status.setText("Idle")
+                    return
+
+                step_id = str(active.step.id)
+                external = not local_busy or self._active_job_id != active.job_id
+
+                if external:
+                    if self._monitored_step_id != step_id:
+                        self._log.appendPlainText(
+                            f"Monitoring external workflow: {active.step_label} "
+                            "(started outside GUI; logs unavailable here)."
                         )
+                    self._monitored_step_id = step_id
+                    self._last_external_job_id = active.job_id
+                    self._select_job_combo(active.job_id)
+                    self._start_btn.setEnabled(False)
+                    self._stop_btn.setEnabled(False)
+                    self._stop_btn.setToolTip(
+                        "This job was started outside the GUI. Stop it from the terminal (Ctrl+C)."
+                    )
+                    elapsed = elapsed_label(active.step)
+                    job_label = WORKFLOW_JOBS.get(active.job_id)
+                    label = job_label.label if job_label else active.job_id
+                    self._phase_status.setText(
+                        f"External: {label} — {active.step_label} ({elapsed}, no live log)"
+                    )
+                    snap = resolve_progress(session, active)
+                    if snap:
+                        self._apply_progress(snap)
+                else:
+                    self._monitored_step_id = step_id
+                    self._phase_status.setText(
+                        f"Running: {active.job_id} — {active.step_label} (phase {active.step.phase_number})"
+                    )
+                    if self._progress_snapshot is None and self._active_job_id:
+                        polled = poll_job_progress(session, self._active_job_id)
+                        if polled:
+                            current, total, unit = polled
+                            self._apply_progress(
+                                ProgressSnapshot(current=current, total=total, unit=unit)
+                            )
+                    elif self._active_job_id:
+                        snap = resolve_progress(session, active)
+                        if snap and (
+                            self._progress_snapshot is None
+                            or snap.current > self._progress_snapshot.current
+                        ):
+                            self._apply_progress(snap)
         except Exception:  # noqa: BLE001
             return
-        if step:
-            self._phase_status.setText(f"Running: {step.step_name} (phase {step.phase_number})")
 
 
 class MainWindow(QMainWindow):
@@ -555,6 +626,9 @@ class MainWindow(QMainWindow):
         self._job_runner = JobRunner(self)
 
         tabs = QTabWidget()
+        self._tabs = tabs
+        self._dashboard = DashboardTab(self._session_factory, self._job_runner)
+        tabs.addTab(self._dashboard, "Home")
         self._opportunities = OpportunitiesTab(settings, self._session_factory)
         tabs.addTab(self._opportunities, "Opportunities")
         self._workflows = WorkflowsTab(
@@ -565,6 +639,9 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self._workflows, "Workflows")
         tabs.addTab(DatabaseTab(self._session_factory), "Database")
+        self._dashboard.navigate_to_workflows.connect(
+            lambda: tabs.setCurrentWidget(self._workflows)
+        )
         self.setCentralWidget(tabs)
 
         self._status = QLabel("")

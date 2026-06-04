@@ -1,5 +1,9 @@
 # GUI Operator Workflows
 
+## Home dashboard
+
+Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress and a **GUI** vs **External** badge. Use **Manage workflows →** to jump to the Workflows tab for logs and start/stop.
+
 Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL, `.env`, and `pip install -e ".[gui]"` (PySide6) are configured.
 
 ## Flow A: Daily arbitrage review (GUI open)
@@ -41,7 +45,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 
 **Goal:** New eBay listings every 24h without keeping the app open.
 
-**Prerequisites:** GUI-6 scheduler tables + `run-due-schedules` implemented.
+**Prerequisites:** `scheduled_jobs` table (`ebay-workflows init-db`) and **Workflows → Schedules** or `ebay-workflows run-due-schedules`.
 
 1. In GUI **Schedules** (or one-time SQL seed): create schedule
    - Job: **phase1** (ingest)
@@ -70,10 +74,12 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 
 ## Flow E: Stop a runaway job
 
-1. **Workflows** tab → see active job log.
-2. Click **Stop** → child process terminated.
+1. **Workflows** tab → see active job log (GUI-started jobs) or **External:** status with progress bar (terminal/CLI-started jobs).
+2. Click **Stop** → terminates only jobs started from the GUI; external runs must be stopped in the terminal (Ctrl+C).
 3. If DB step stuck `running`, note warning in UI; inspect **Database → Recent workflow steps**.
 4. Re-run phase after fixing env (e.g. HF network for phase 5).
+
+**Monitoring CLI jobs:** The Workflows tab polls `workflow_steps` every ~2s. Phases publish `progress_current` / `progress_total` on the running step so progress appears even without live log output.
 
 ---
 

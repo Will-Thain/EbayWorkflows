@@ -14,6 +14,7 @@ from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import title_match_allowed_for_pricing
 from .services.progress_report import emit_progress
+from .services.workflow_progress import publish_step_progress
 
 
 def _now() -> datetime:
@@ -119,6 +120,7 @@ def run_phase2_title_match(
         total_listings = len(listings)
         if total_listings:
             emit_progress(0, total_listings, unit="listings")
+            publish_step_progress(session, step, 0, total_listings, unit="listings")
 
         for index, listing in enumerate(listings, start=1):
             session.execute(delete(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing.id))
@@ -154,6 +156,7 @@ def run_phase2_title_match(
 
             if index % 3 == 0 or index == total_listings:
                 emit_progress(index, total_listings, unit="listings")
+                publish_step_progress(session, step, index, total_listings, unit="listings")
 
         step.status = "succeeded"
         step.finished_at = _now()

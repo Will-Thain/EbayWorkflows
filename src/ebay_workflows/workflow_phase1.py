@@ -12,6 +12,7 @@ from .integrations.ebay import ListingRecord, fetch_listings
 from .models import Listing, ListingImage, WorkflowRun, WorkflowStep
 from .services.image_cache import download_to_cache
 from .services.progress_report import emit_progress
+from .services.workflow_progress import publish_step_progress
 
 
 def _now():
@@ -83,6 +84,7 @@ def run_phase1(
         total_records = len(records)
         if total_records:
             emit_progress(0, total_records, unit="listings")
+            publish_step_progress(session, step, 0, total_records, unit="listings")
 
         for index, record in enumerate(records, start=1):
             existing = session.execute(
@@ -161,9 +163,11 @@ def run_phase1(
 
             if index % 5 == 0 or index == total_records:
                 emit_progress(index, total_records, unit="listings")
+                publish_step_progress(session, step, index, total_records, unit="listings")
 
         if download_images and image_rows:
             emit_progress(downloaded, image_rows, unit="images")
+            publish_step_progress(session, step, downloaded, image_rows, unit="images")
 
         step.status = "succeeded"
         step.finished_at = _now()

@@ -1,25 +1,11 @@
 from __future__ import annotations
 
-import shutil
-import sys
-from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from ..cli_launch import project_root, resolve_cli_launch
 from .workflow_catalog import WORKFLOW_JOBS, build_argv
-
-
-def project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
-def resolve_cli_launch(argv: list[str]) -> tuple[str, list[str]]:
-    """Return (program, args) to spawn the ebay-workflows CLI."""
-    executable = shutil.which("ebay-workflows")
-    if executable:
-        return executable, argv[1:]
-    return sys.executable, ["-m", "ebay_workflows", *argv[1:]]
 
 
 class JobRunner(QObject):
@@ -34,6 +20,12 @@ class JobRunner(QObject):
 
     def is_busy(self) -> bool:
         return self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning
+
+    @property
+    def current_job_id(self) -> str | None:
+        if not self.is_busy():
+            return None
+        return self._current_job_id
 
     def start(self, job_id: str, params: dict[str, Any] | None = None) -> None:
         if self.is_busy():

@@ -13,6 +13,7 @@ from .models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, Wo
 from .services.ev_guardrails import cap_ev_adjusted
 from .services.hybrid_scoring import compute_listing_score_hybrid
 from .services.progress_report import emit_progress
+from .services.workflow_progress import publish_step_progress
 
 
 def _now() -> datetime:
@@ -123,6 +124,7 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
         total_listings = len(listings)
         if total_listings:
             emit_progress(0, total_listings, unit="listings")
+            publish_step_progress(session, step, 0, total_listings, unit="listings")
 
         for index, listing in enumerate(listings, start=1):
             listing_candidates = by_listing.get(listing.id, [])
@@ -159,6 +161,7 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
             scored += 1
             if index % 10 == 0 or index == total_listings:
                 emit_progress(index, total_listings, unit="listings")
+                publish_step_progress(session, step, index, total_listings, unit="listings")
 
         step.status = "succeeded"
         step.finished_at = _now()

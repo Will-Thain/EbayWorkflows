@@ -19,7 +19,7 @@ The desktop app is built with **[PySide6](https://doc.qt.io/qtforpython/)** — 
 
 | Concern | PySide6 approach |
 |---------|------------------|
-| Layout | `QMainWindow` + `QTabWidget` (Workflows, Opportunities, Database) |
+| Layout | `QMainWindow` + `QTabWidget` (**Home**, Opportunities, Workflows, Database) |
 | Rankings table | `QTableView` + `QAbstractTableModel` (sortable columns, row selection) |
 | Split detail / image | `QSplitter` (list left, detail + `QLabel` / `QScrollArea` right) |
 | Workflow log | `QPlainTextEdit` (read-only), fed by signals from worker thread |
@@ -48,8 +48,9 @@ Entry module: **`gui/qt_app.py`**. Shared logic (`favorites.py`, `presenters.py`
 
 | Goal | Tab / area | Primary data source |
 |------|------------|---------------------|
+| Pipeline overview & ongoing runs | **Home** (dashboard) | Counts from `listings`, `listing_scores`, `listing_favorites`, `listing_images`; all `workflow_steps` with `status = 'running'` |
 | Start / stop workflows | **Workflows** | Child `ebay-workflows` processes; optional `workflow_runs` / `workflow_steps` rows written by CLI |
-| Monitor progress | **Workflows** (log + status) | Poll `workflow_steps` where `status = 'running'`; tail subprocess stdout; read `metrics_json` when phase completes |
+| Monitor progress | **Home** + **Workflows** | Poll `workflow_steps` where `status = 'running'`; Workflows tab also tails subprocess stdout |
 | View / query database | **Database** | SQLAlchemy read-only sessions; curated queries + optional read-only SQL |
 | Preview best matches | **Opportunities** | `fetch_ranked_listings`; `listing_images.local_path`; `listing_card_candidates` + `evidence_json` |
 | Schedule future runs | **Schedules** (sub-panel of Workflows) | `scheduled_jobs` table; in-app scheduler + headless CLI tick |
@@ -366,7 +367,7 @@ Bind nothing on the network.
 | **GUI-3** | DB polling for `workflow_steps`; metrics summary on complete |
 | **GUI-4** | Phase 1 / 5 / 6 in catalog with strong “long running” warnings |
 | **GUI-5** | Favourites (star, filter, notes) + `listing_favorites` model |
-| **GUI-6** | Schedules UI + `scheduled_jobs` + `run-due-schedules` CLI |
+| **GUI-6** | Schedules UI + `scheduled_jobs` + `run-due-schedules` CLI (implemented) |
 | **GUI-7** | Windows Task Scheduler export guide; PyInstaller `.exe` (bundle PySide6 Qt libs) |
 
 Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual runs land before automation.

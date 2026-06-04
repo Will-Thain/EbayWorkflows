@@ -8,7 +8,7 @@ Checklist and **locked defaults** before implementing the desktop app. See `gui-
 - [x] Schema sketched: `listing_favorites`, `scheduled_jobs` in `data-model.md`
 - [x] Operator workflows documented in `gui-operator-workflows.md`
 - [ ] Run `ebay-workflows init-db` after pulling models (creates new tables via `create_all`)
-- [ ] Confirm `[gui]` optional dependency approved (`pyside6`; `apscheduler` deferred to GUI-6)
+- [x] Confirm `[gui]` optional dependency approved (`pyside6`; in-app schedule tick uses `QTimer`, no APScheduler)
 - [ ] Qt runtime smoke: `python -c "from PySide6.QtWidgets import QApplication"` succeeds after install
 - [ ] Hugging Face / Tesseract available if scheduling Phase 5 headless later
 

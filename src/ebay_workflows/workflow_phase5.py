@@ -23,6 +23,7 @@ from .services.card_regions import CardRegion
 from .services.embedding_index import apply_embedding_evidence, index_exists
 from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
 from .services.progress_report import emit_progress
+from .services.workflow_progress import publish_step_progress
 
 
 def _now() -> datetime:
@@ -241,10 +242,14 @@ def run_phase5_ocr_verification(
                     for img in eligible
                 }
                 total = len(futures)
+                if total:
+                    emit_progress(0, total, unit="images")
+                    publish_step_progress(session, step, 0, total, unit="images")
                 for index, future in enumerate(as_completed(futures), start=1):
                     results.append(future.result())
                     if index % 5 == 0 or index == total:
                         emit_progress(index, total, unit="images")
+                        publish_step_progress(session, step, index, total, unit="images")
             return results
 
         if mock_ocr_file:

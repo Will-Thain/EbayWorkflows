@@ -29,6 +29,7 @@ from .services.bulk_lot_detection import (
 )
 from .services.ev_guardrails import cap_ev_adjusted, sanitize_unit_price, title_match_allowed_for_pricing
 from .services.progress_report import emit_progress
+from .services.workflow_progress import publish_step_progress
 from .services.listing_filters import is_bulk_lot_title
 
 
@@ -331,11 +332,15 @@ def run_phase6_bulk_lot_detection(
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_detect_payload, image): image for image in eligible}
                 total = len(futures)
+                if total:
+                    emit_progress(0, total, unit="images")
+                    publish_step_progress(session, step, 0, total, unit="images")
                 for index, future in enumerate(as_completed(futures), start=1):
                     image_id, payload = future.result()
                     detection_results[image_id] = payload
                     if index % 5 == 0 or index == total:
                         emit_progress(index, total, unit="images")
+                        publish_step_progress(session, step, index, total, unit="images")
 
             by_image_id = {str(img.id): img for img in eligible}
             for image_id, payload in detection_results.items():
