@@ -5,7 +5,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QProcess, Signal
 
 from ..cli_launch import project_root, resolve_cli_launch
-from .workflow_catalog import WORKFLOW_JOBS, build_argv
+from .workflow_catalog import build_argv
 
 
 class JobRunner(QObject):

@@ -5,7 +5,7 @@ from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import QDateTime, Qt, QTime, QTimer
+from PySide6.QtCore import QDateTime, QTime, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,

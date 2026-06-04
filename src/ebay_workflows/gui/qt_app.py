@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from sqlalchemy import select
+
 from ..config import Settings
 from ..db import build_session_factory
 from ..models import ListingImage

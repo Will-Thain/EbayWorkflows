@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import uuid
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from ebay_workflows.gui import favorites as fav
-from ebay_workflows.models import Base, Listing, ListingFavorite, ListingScore
+from ebay_workflows.models import Base, Listing, ListingScore
 from ebay_workflows.services.ranked_export import fetch_ranked_listings
 
 
