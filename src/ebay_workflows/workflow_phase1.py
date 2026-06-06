@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .integrations.ebay import ListingRecord, fetch_listings
 from .models import Listing, ListingImage, WorkflowRun, WorkflowStep
-from .services.image_cache import download_to_cache
+from .services.image_cache import download_many_to_cache
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
 
@@ -86,6 +86,8 @@ def run_phase1(
             emit_progress(0, total_records, unit="listings")
             publish_step_progress(session, step, 0, total_records, unit="listings")
 
+        pending_downloads: list[tuple[ListingImage, str]] = []
+
         for index, record in enumerate(records, start=1):
             existing = session.execute(
                 select(Listing).where(Listing.external_listing_id == record.external_listing_id)
@@ -146,24 +148,32 @@ def run_phase1(
                 image_rows += 1
 
                 if download_images:
-                    try:
-                        local_path, content_hash = download_to_cache(
-                            url=image_url,
-                            cache_dir=settings.image_cache_dir,
-                            timeout_ms=settings.image_download_timeout_ms,
-                        )
-                        img.local_path = local_path
-                        img.content_hash = content_hash
-                        img.download_status = "succeeded"
-                        img.downloaded_at = _now()
-                        downloaded += 1
-                    except Exception as exc:  # noqa: BLE001
-                        img.download_status = "failed"
-                        img.error_json = {"message": str(exc)}
+                    pending_downloads.append((img, image_url))
 
             if index % 5 == 0 or index == total_records:
                 emit_progress(index, total_records, unit="listings")
                 publish_step_progress(session, step, index, total_records, unit="listings")
+
+        if download_images and pending_downloads:
+            urls = [url for _, url in pending_downloads]
+            download_results = download_many_to_cache(
+                urls,
+                settings.image_cache_dir,
+                settings.image_download_timeout_ms,
+                max_workers=settings.pipeline_max_download_workers,
+            )
+            for img, url in pending_downloads:
+                outcome = download_results.get(url)
+                if isinstance(outcome, Exception):
+                    img.download_status = "failed"
+                    img.error_json = {"message": str(outcome)}
+                    continue
+                local_path, content_hash = outcome
+                img.local_path = local_path
+                img.content_hash = content_hash
+                img.download_status = "succeeded"
+                img.downloaded_at = _now()
+                downloaded += 1
 
         if download_images and image_rows:
             emit_progress(downloaded, image_rows, unit="images")
@@ -178,6 +188,7 @@ def run_phase1(
             "listings_skipped_existing": skipped_existing,
             "image_rows_inserted": image_rows,
             "images_downloaded": downloaded,
+            "pipeline_max_download_workers": settings.pipeline_max_download_workers,
         }
         run.status = "succeeded"
         run.finished_at = _now()

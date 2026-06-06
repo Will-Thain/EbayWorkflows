@@ -44,9 +44,15 @@ class Settings(BaseSettings):
     faiss_top_k: int = Field(default=5, alias="FAISS_TOP_K")
     faiss_build_max_cards: int = Field(default=500, alias="FAISS_BUILD_MAX_CARDS")
     openclip_model_name: str = Field(default="ViT-B-32", alias="OPENCLIP_MODEL_NAME")
+    torch_device: str = Field(default="cpu", alias="TORCH_DEVICE")
+    embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     image_min_region_score: float = Field(default=0.55, alias="IMAGE_MIN_REGION_SCORE")
     image_allow_full_frame_fallback: bool = Field(default=False, alias="IMAGE_ALLOW_FULL_FRAME_FALLBACK")
     pipeline_max_image_workers: int = Field(default=4, alias="PIPELINE_MAX_IMAGE_WORKERS")
+    pipeline_max_download_workers: int = Field(default=8, alias="PIPELINE_MAX_DOWNLOAD_WORKERS")
+    pipeline_max_title_match_workers: int = Field(default=12, alias="PIPELINE_MAX_TITLE_MATCH_WORKERS")
+    title_match_prefilter_size: int = Field(default=512, alias="TITLE_MATCH_PREFILTER_SIZE")
+    phase2_skip_unchanged_listings: bool = Field(default=True, alias="PHASE2_SKIP_UNCHANGED_LISTINGS")
     phase1_skip_existing_listings: bool = Field(default=True, alias="PHASE1_SKIP_EXISTING_LISTINGS")
     title_match_min_score_for_pricing: float = Field(default=0.88, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
     title_match_min_score_non_mtg: float = Field(default=0.98, alias="TITLE_MATCH_MIN_SCORE_NON_MTG")
@@ -94,7 +100,11 @@ class Settings(BaseSettings):
             "GLOBAL_REQUESTS_PER_MINUTE_CAP": self.global_requests_per_minute_cap,
             "FAISS_TOP_K": self.faiss_top_k,
             "FAISS_BUILD_MAX_CARDS": self.faiss_build_max_cards,
+            "EMBEDDING_BATCH_SIZE": self.embedding_batch_size,
             "PIPELINE_MAX_IMAGE_WORKERS": self.pipeline_max_image_workers,
+            "PIPELINE_MAX_DOWNLOAD_WORKERS": self.pipeline_max_download_workers,
+            "PIPELINE_MAX_TITLE_MATCH_WORKERS": self.pipeline_max_title_match_workers,
+            "TITLE_MATCH_PREFILTER_SIZE": self.title_match_prefilter_size,
         }
         for key, value in positive_fields.items():
             if value <= 0:
@@ -102,6 +112,13 @@ class Settings(BaseSettings):
 
         if self.db_pool_min > self.db_pool_max:
             raise ValueError("DB_POOL_MIN cannot be greater than DB_POOL_MAX")
+
+        try:
+            from .services.openclip_runtime import normalize_torch_device
+
+            normalize_torch_device(self.torch_device)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
         self.ebay_client_id = self._strip_optional(self.ebay_client_id)
         self.ebay_client_secret = self._strip_optional(self.ebay_client_secret)

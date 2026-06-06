@@ -105,9 +105,10 @@ def compute_listing_score_hybrid(
     confidence_score = confidence_total / Decimal(str(max(matched, 1)))
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
-    rank_value = ev_adjusted
+    # Unpriced listings must not rank above scored lots (ev_adjusted=0 sorts above negatives).
+    rank_value = ev_raw if matched == 0 else ev_adjusted
     ev_capped = False
-    if settings is not None:
+    if matched > 0 and settings is not None:
         rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
 
     explanation: dict[str, Any] = {

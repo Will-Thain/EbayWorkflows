@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings
 from ..models import ScryfallCard
+from .openclip_runtime import embed_image_file, embed_image_paths
 
 
 @dataclass(slots=True)
@@ -28,28 +29,6 @@ def _meta_path(index_path: str) -> Path:
 
 def index_exists(index_path: str) -> bool:
     return Path(index_path).exists() and _meta_path(index_path).exists()
-
-
-def _load_openclip(settings: Settings) -> tuple[Any, Any, Any]:
-    import open_clip  # type: ignore[import-not-found]
-    import torch  # type: ignore[import-not-found]
-
-    model_name = settings.openclip_model_name
-    pretrained = "openai"
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
-    model.eval()
-    return model, preprocess, torch
-
-
-def embed_image_file(image_path: str, settings: Settings) -> np.ndarray:
-    from PIL import Image  # type: ignore[import-not-found]
-
-    model, preprocess, torch = _load_openclip(settings)
-    tensor = preprocess(Image.open(image_path).convert("RGB")).unsqueeze(0)
-    with torch.no_grad():
-        features = model.encode_image(tensor)
-        features = features / features.norm(dim=-1, keepdim=True)
-    return features.cpu().numpy().astype(np.float32)
 
 
 def _download_art(url: str, dest: Path, timeout_ms: int) -> bool:
@@ -86,11 +65,10 @@ def build_faiss_index(
         raise ValueError("No Scryfall cards with image_normal found. Run sync-scryfall first.")
 
     art_dir = Path(settings.image_cache_dir) / "scryfall_art"
-    vectors: list[np.ndarray] = []
+    pending_paths: list[str] = []
     card_ids: list[str] = []
     card_names: list[str] = []
     downloaded = 0
-    embedded = 0
 
     for card in cards:
         if not card.image_normal:
@@ -103,19 +81,42 @@ def build_faiss_index(
             time.sleep(0.05)
         if not art_path.exists():
             continue
-        try:
-            vector = embed_image_file(str(art_path), settings)
-        except Exception:  # noqa: BLE001
-            continue
-        vectors.append(vector[0])
+        pending_paths.append(str(art_path))
         card_ids.append(str(card.id))
         card_names.append(card.name)
-        embedded += 1
 
-    if not vectors:
+    if not pending_paths:
         raise ValueError("Could not embed any Scryfall art images for FAISS index.")
 
-    matrix = np.vstack(vectors).astype(np.float32)
+    batch_size = max(1, settings.embedding_batch_size)
+    matrix_rows: list[np.ndarray] = []
+    indexed_ids: list[str] = []
+    indexed_names: list[str] = []
+
+    for start in range(0, len(pending_paths), batch_size):
+        chunk_paths = pending_paths[start : start + batch_size]
+        chunk_ids = card_ids[start : start + batch_size]
+        chunk_names = card_names[start : start + batch_size]
+        try:
+            vectors = embed_image_paths(chunk_paths, settings)
+            for vector, card_id, card_name in zip(vectors, chunk_ids, chunk_names, strict=True):
+                matrix_rows.append(vector)
+                indexed_ids.append(card_id)
+                indexed_names.append(card_name)
+        except Exception:  # noqa: BLE001
+            for path, card_id, card_name in zip(chunk_paths, chunk_ids, chunk_names, strict=True):
+                try:
+                    vector = embed_image_file(path, settings)
+                except Exception:  # noqa: BLE001
+                    continue
+                matrix_rows.append(vector[0])
+                indexed_ids.append(card_id)
+                indexed_names.append(card_name)
+
+    if not matrix_rows:
+        raise ValueError("Could not embed any Scryfall art images for FAISS index.")
+
+    matrix = np.vstack(matrix_rows).astype(np.float32)
     dimension = matrix.shape[1]
     index = faiss.IndexFlatIP(dimension)
     index.add(matrix)
@@ -127,9 +128,10 @@ def build_faiss_index(
         json.dumps(
             {
                 "model_name": settings.openclip_model_name,
+                "torch_device": settings.torch_device,
                 "dimension": dimension,
-                "scryfall_ids": card_ids,
-                "card_names": card_names,
+                "scryfall_ids": indexed_ids,
+                "card_names": indexed_names,
             }
         ),
         encoding="utf-8",
@@ -137,8 +139,10 @@ def build_faiss_index(
     return {
         "cards_considered": len(cards),
         "images_downloaded": downloaded,
-        "vectors_indexed": embedded,
+        "vectors_indexed": len(matrix_rows),
         "index_path": str(index_path),
+        "torch_device": settings.torch_device,
+        "embedding_batch_size": settings.embedding_batch_size,
     }
 
 

@@ -105,6 +105,13 @@ def validate_env() -> None:
     table.add_row("GLOBAL_REQUESTS_PER_MINUTE_CAP", str(settings.global_requests_per_minute_cap))
     table.add_row("ENABLE_PROVIDER_POLICY_CHECKS", str(settings.enable_provider_policy_checks))
     table.add_row("DISABLE_LIVE_API_WRITES", str(settings.disable_live_api_writes))
+    table.add_row("TORCH_DEVICE", settings.torch_device)
+    table.add_row("EMBEDDING_BATCH_SIZE", str(settings.embedding_batch_size))
+    table.add_row("PIPELINE_MAX_IMAGE_WORKERS", str(settings.pipeline_max_image_workers))
+    table.add_row("PIPELINE_MAX_DOWNLOAD_WORKERS", str(settings.pipeline_max_download_workers))
+    table.add_row("PIPELINE_MAX_TITLE_MATCH_WORKERS", str(settings.pipeline_max_title_match_workers))
+    table.add_row("TITLE_MATCH_PREFILTER_SIZE", str(settings.title_match_prefilter_size))
+    table.add_row("PHASE2_SKIP_UNCHANGED_LISTINGS", str(settings.phase2_skip_unchanged_listings))
     console.print(table)
     console.print("[bold green]Environment validation passed.[/bold green]")
 

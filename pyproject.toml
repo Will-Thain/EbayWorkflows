@@ -36,6 +36,9 @@ dev = [
   "pytest",
   "ruff",
 ]
+gpu = [
+  "torch-directml",
+]
 
 [project.scripts]
 ebay-workflows = "ebay_workflows.cli:app"

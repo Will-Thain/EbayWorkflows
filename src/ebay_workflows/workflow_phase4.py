@@ -72,7 +72,10 @@ def _compute_listing_score(
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
 
-    rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
+    rank_value = ev_raw if matched == 0 else ev_adjusted
+    ev_capped = False
+    if matched > 0:
+        rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
     explanation: dict[str, Any] = {
         "listing_cost": float(listing_cost),
         "gross_value": float(gross_value),
@@ -126,15 +129,20 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
             emit_progress(0, total_listings, unit="listings")
             publish_step_progress(session, step, 0, total_listings, unit="listings")
 
+        skipped_lot_scores = 0
         for index, listing in enumerate(listings, start=1):
+            existing = session.execute(
+                select(ListingScore).where(ListingScore.listing_id == listing.id)
+            ).scalar_one_or_none()
+            if existing and existing.scoring_version == "v2_lot":
+                skipped_lot_scores += 1
+                continue
+
             listing_candidates = by_listing.get(listing.id, [])
             if use_hybrid:
                 calc = compute_listing_score_hybrid(listing_candidates, listing, settings)
             else:
                 calc = _compute_listing_score(listing_candidates, listing, settings)
-            existing = session.execute(
-                select(ListingScore).where(ListingScore.listing_id == listing.id)
-            ).scalar_one_or_none()
             if existing:
                 existing.ev_raw = calc["ev_raw"]
                 existing.ev_adjusted = calc["ev_adjusted"]
@@ -165,7 +173,11 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
 
         step.status = "succeeded"
         step.finished_at = _now()
-        step.metrics_json = {"listings_seen": len(listings), "scores_written": scored}
+        step.metrics_json = {
+            "listings_seen": len(listings),
+            "scores_written": scored,
+            "skipped_lot_scores": skipped_lot_scores,
+        }
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()

@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rapidfuzz import fuzz
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +13,12 @@ from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import title_match_allowed_for_pricing
 from .services.progress_report import emit_progress
+from .services.title_match import (
+    CardMatchEntry,
+    ScryfallTitleIndex,
+    TitleMatchResult,
+    match_listings_parallel,
+)
 from .services.workflow_progress import publish_step_progress
 
 
@@ -72,16 +77,61 @@ def load_cards_from_cache(settings: Settings) -> list[dict[str, Any]]:
         raise ValueError("Cached Scryfall file is not a list.")
     return data
 
+    """Map listing_id -> title stored on existing title_match evidence."""
+    rows = session.execute(
+        select(ListingCardCandidate.listing_id, ListingCardCandidate.evidence_json).where(
+            ListingCardCandidate.source_method == "title_match"
+        )
+    ).all()
+    matched: dict[uuid.UUID, str] = {}
+    for listing_id, evidence in rows:
+        if listing_id in matched:
+            continue
+        if isinstance(evidence, dict):
+            stored_title = evidence.get("listing_title")
+            if isinstance(stored_title, str):
+                matched[listing_id] = stored_title
+    return matched
 
-def _best_matches(title: str, cards: list[ScryfallCard], top_k: int) -> list[tuple[ScryfallCard, float]]:
-    scored: list[tuple[ScryfallCard, float]] = []
-    for card in cards:
-        ratio = fuzz.WRatio(title.lower(), card.name.lower())
-        score = ratio / 100.0
-        if score >= 0.55:
-            scored.append((card, score))
-    scored.sort(key=lambda item: item[1], reverse=True)
-    return scored[:top_k]
+
+def _persist_matches(
+    session: Session,
+    listing: Listing,
+    matches: list[TitleMatchResult],
+    settings: Settings,
+) -> tuple[int, bool]:
+    session.execute(delete(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing.id))
+    if not matches:
+        return 0, False
+
+    rank = 1
+    rows_created = 0
+    for match in matches:
+        pricing_ok, reject_reason = title_match_allowed_for_pricing(
+            listing.title, match.card_name, match.score, settings
+        )
+        evidence = {
+            "listing_title": listing.title,
+            "matched_card_name": match.card_name,
+            "method": "rapidfuzz_wratio_prefiltered",
+            "pricing_eligible": pricing_ok,
+        }
+        if reject_reason:
+            evidence["pricing_reject_reason"] = reject_reason
+        session.add(
+            ListingCardCandidate(
+                listing_id=listing.id,
+                source_method="title_match",
+                scryfall_id=_as_uuid(match.card_id),
+                match_score=match.score,
+                confidence_score=match.score if pricing_ok else min(match.score, 0.5),
+                rank_position=rank,
+                evidence_json=evidence,
+            )
+        )
+        rank += 1
+        rows_created += 1
+    return rows_created, True
 
 
 def run_phase2_title_match(
@@ -111,59 +161,68 @@ def run_phase2_title_match(
 
     try:
         listings = session.execute(select(Listing)).scalars().all()
-        cards = session.execute(select(ScryfallCard)).scalars().all()
-        if not cards:
+        card_rows = session.execute(select(ScryfallCard.id, ScryfallCard.name)).all()
+        if not card_rows:
             raise ValueError("No Scryfall cards loaded. Run sync and load first.")
+
+        listing_by_id = {listing.id: listing for listing in listings}
+        stored_titles = _listing_ids_with_current_title_matches(session) if settings.phase2_skip_unchanged_listings else {}
+
+        to_match: list[tuple[str, str]] = []
+        skipped_listings = 0
+        for listing in listings:
+            if stored_titles.get(listing.id) == listing.title:
+                skipped_listings += 1
+                continue
+            to_match.append((str(listing.id), listing.title))
+
+        index = ScryfallTitleIndex.from_entries(
+            [CardMatchEntry(card_id=str(card_id), name=name) for card_id, name in card_rows]
+        )
+        match_results = match_listings_parallel(
+            to_match,
+            index,
+            top_k=top_k,
+            prefilter_size=settings.title_match_prefilter_size,
+            max_workers=settings.pipeline_max_title_match_workers,
+        )
 
         matched_listings = 0
         candidate_rows = 0
         total_listings = len(listings)
+        processed = skipped_listings
+
         if total_listings:
-            emit_progress(0, total_listings, unit="listings")
-            publish_step_progress(session, step, 0, total_listings, unit="listings")
+            emit_progress(processed, total_listings, unit="listings")
+            publish_step_progress(session, step, processed, total_listings, unit="listings")
 
-        for index, listing in enumerate(listings, start=1):
-            session.execute(delete(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing.id))
-            matches = _best_matches(listing.title, cards, top_k=top_k)
-            rank = 1
-            for card, score in matches:
-                pricing_ok, reject_reason = title_match_allowed_for_pricing(
-                    listing.title, card.name, score, settings
-                )
-                evidence = {
-                    "listing_title": listing.title,
-                    "matched_card_name": card.name,
-                    "method": "rapidfuzz_wratio",
-                    "pricing_eligible": pricing_ok,
-                }
-                if reject_reason:
-                    evidence["pricing_reject_reason"] = reject_reason
-                session.add(
-                    ListingCardCandidate(
-                        listing_id=listing.id,
-                        source_method="title_match",
-                        scryfall_id=card.id,
-                        match_score=score,
-                        confidence_score=score if pricing_ok else min(score, 0.5),
-                        rank_position=rank,
-                        evidence_json=evidence,
-                    )
-                )
-                rank += 1
-                candidate_rows += 1
-            if matches:
+        for listing_id_str, matches in match_results.items():
+            listing = listing_by_id.get(uuid.UUID(listing_id_str))
+            if listing is None:
+                continue
+            rows_created, had_matches = _persist_matches(session, listing, matches, settings)
+            candidate_rows += rows_created
+            if had_matches:
                 matched_listings += 1
+            processed += 1
+            if processed % 3 == 0 or processed == total_listings:
+                emit_progress(processed, total_listings, unit="listings")
+                publish_step_progress(session, step, processed, total_listings, unit="listings")
 
-            if index % 3 == 0 or index == total_listings:
-                emit_progress(index, total_listings, unit="listings")
-                publish_step_progress(session, step, index, total_listings, unit="listings")
+        if processed != total_listings:
+            emit_progress(total_listings, total_listings, unit="listings")
+            publish_step_progress(session, step, total_listings, total_listings, unit="listings")
 
         step.status = "succeeded"
         step.finished_at = _now()
         step.metrics_json = {
             "listings_seen": len(listings),
-            "listings_matched": matched_listings,
+            "listings_matched": matched_listings + skipped_listings,
+            "listings_skipped_unchanged": skipped_listings,
+            "listings_rematched": len(to_match),
             "candidate_rows_created": candidate_rows,
+            "title_match_prefilter_size": settings.title_match_prefilter_size,
+            "pipeline_max_title_match_workers": settings.pipeline_max_title_match_workers,
         }
         run.status = "succeeded"
         run.finished_at = _now()
@@ -178,4 +237,3 @@ def run_phase2_title_match(
         raise
 
     return str(run.id)
-

@@ -24,3 +24,34 @@ def download_to_cache(url: str, cache_dir: str, timeout_ms: int) -> tuple[str, s
     output_path.write_bytes(data)
     return str(output_path), content_hash
 
+
+def download_many_to_cache(
+    urls: list[str],
+    cache_dir: str,
+    timeout_ms: int,
+    *,
+    max_workers: int = 8,
+) -> dict[str, tuple[str, str] | Exception]:
+    """Download many image URLs in parallel; returns url -> (path, hash) or error."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if not urls:
+        return {}
+
+    unique_urls = list(dict.fromkeys(urls))
+    workers = max(1, min(max_workers, len(unique_urls)))
+    results: dict[str, tuple[str, str] | Exception] = {}
+
+    def _one(url: str) -> tuple[str, tuple[str, str] | Exception]:
+        try:
+            return url, download_to_cache(url, cache_dir, timeout_ms)
+        except Exception as exc:  # noqa: BLE001
+            return url, exc
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_one, url) for url in unique_urls]
+        for future in as_completed(futures):
+            url, outcome = future.result()
+            results[url] = outcome
+    return results
+
