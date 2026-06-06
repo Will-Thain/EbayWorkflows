@@ -77,6 +77,8 @@ def load_cards_from_cache(settings: Settings) -> list[dict[str, Any]]:
         raise ValueError("Cached Scryfall file is not a list.")
     return data
 
+
+def _listing_ids_with_current_title_matches(session: Session) -> dict[uuid.UUID, str]:
     """Map listing_id -> title stored on existing title_match evidence."""
     rows = session.execute(
         select(ListingCardCandidate.listing_id, ListingCardCandidate.evidence_json).where(

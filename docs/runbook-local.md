@@ -30,8 +30,12 @@
    `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
 10. sync Scryfall bulk cards into DB:
    `ebay-workflows sync-scryfall`
-10b. build OpenCLIP+FAISS art index (subset, rate-limited downloads):
-   `ebay-workflows build-faiss-index --max-cards 500`
+10b. build OpenCLIP+FAISS art index (subset; default 10k cards from `FAISS_BUILD_MAX_CARDS`):
+   `ebay-workflows build-faiss-index`
+   - progress lines emit during embedding batches
+   - `validate-env` reports FAISS_INDEX_READY
+10c. ensure performance indexes on existing DB:
+   `ebay-workflows ensure-db-indexes`
 11. run title-based matching:
    `ebay-workflows phase2-match-title --top-k 3`
 12. download full Cardmarket MTG singles price guide (official daily export):
@@ -55,7 +59,12 @@
 17. image-heavy phases use parallel workers (`PIPELINE_MAX_IMAGE_WORKERS`) and skip images without visible card regions (`IMAGE_MIN_REGION_SCORE`, `IMAGE_ALLOW_FULL_FRAME_FALLBACK=false`).
 17b. Phase 1 skips listings already in DB when `PHASE1_SKIP_EXISTING_LISTINGS=true` (default).
 17c. live production pipeline (after production OAuth works):
-   `./scripts/run-live-pipeline.ps1 -MaxPages 1`
+   `./scripts/run-live-pipeline.ps1`
+   - omit `-MaxPages` to use `EBAY_MAX_PAGES_PER_RUN` from `.env` (default 20)
+   - pass `-MaxPages 5` for a smaller daily incremental run
+17d. **large-scale ingest** (full prep + up to 1,000 listings/run):
+   `./scripts/run-large-ingest.ps1 -Query "magic the gathering mtg"`
+   - see `docs/large-scale-ingest.md` for capacity limits, hardware tuning, and flags
    - requires Tesseract on PATH for meaningful OCR text; without it, OpenCV regions still run but OCR fields may be empty
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`

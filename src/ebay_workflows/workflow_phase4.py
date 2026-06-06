@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, WorkflowStep
+from .services.currency import listing_total_cost_base
 from .services.ev_guardrails import cap_ev_adjusted
 from .services.hybrid_scoring import compute_listing_score_hybrid
 from .services.progress_report import emit_progress
@@ -34,7 +35,7 @@ def _compute_listing_score(
     settings: Settings,
 ) -> dict[str, Any]:
     if not candidates:
-        listing_cost = _to_decimal(listing.price_amount) + _to_decimal(listing.shipping_amount)
+        listing_cost = listing_total_cost_base(listing, settings)
         return {
             "ev_raw": -listing_cost,
             "confidence_score": Decimal("0"),
@@ -66,7 +67,7 @@ def _compute_listing_score(
             }
         )
 
-    listing_cost = _to_decimal(listing.price_amount) + _to_decimal(listing.shipping_amount)
+    listing_cost = listing_total_cost_base(listing, settings)
     ev_raw = gross_value - listing_cost
     confidence_score = confidence_total / Decimal(str(max(matched, 1)))
     risk_score = Decimal("1") - confidence_score

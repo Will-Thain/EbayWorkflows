@@ -27,6 +27,8 @@ Retrieve MTG listings and image URLs using eBay APIs with predictable pagination
 - retry transient HTTP failures
 - record request/response metadata for traceability
 - deduplicate by stable external listing ID
+- respect eBay Browse **offset ceiling (~10,000 results per query)**; paginate with `EBAY_PAGE_SIZE` and `EBAY_MAX_PAGES_PER_RUN`
+- stop pagination when API `total` is reached or `itemSummaries` is empty
 
 ## Scryfall Integration (Phase 2)
 

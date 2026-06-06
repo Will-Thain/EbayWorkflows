@@ -29,6 +29,8 @@ The docs in this folder define:
 - `error-model.md` - retry, failure, and CLI exit-code strategy
 - `testing-strategy.md` - fixtures, integration tests, and quality gates
 - `runbook-local.md` - local setup and operational troubleshooting
+- `large-scale-ingest.md` - high-volume eBay ingest, capacity limits, and production scripts
+- `future-pain-points.md` - known limits, recommended fixes, and implementation status
 - `gui-application.md` - local desktop app spec (PySide6 / Qt 6; workflows, monitor, DB browse, match preview)
 - `gui-build-prerequisites.md` - pre-build checklist and locked defaults
 - `gui-operator-workflows.md` - example operator day-in-the-life flows

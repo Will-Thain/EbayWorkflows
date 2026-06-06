@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     tesseract_cmd: str | None = Field(default=None, alias="TESSERACT_CMD")
     faiss_index_path: str = Field(alias="FAISS_INDEX_PATH")
     faiss_top_k: int = Field(default=5, alias="FAISS_TOP_K")
-    faiss_build_max_cards: int = Field(default=500, alias="FAISS_BUILD_MAX_CARDS")
+    faiss_build_max_cards: int = Field(default=10000, alias="FAISS_BUILD_MAX_CARDS")
     openclip_model_name: str = Field(default="ViT-B-32", alias="OPENCLIP_MODEL_NAME")
     torch_device: str = Field(default="cpu", alias="TORCH_DEVICE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     title_match_prefilter_size: int = Field(default=512, alias="TITLE_MATCH_PREFILTER_SIZE")
     phase2_skip_unchanged_listings: bool = Field(default=True, alias="PHASE2_SKIP_UNCHANGED_LISTINGS")
     phase1_skip_existing_listings: bool = Field(default=True, alias="PHASE1_SKIP_EXISTING_LISTINGS")
+    phase1_commit_batch_size: int = Field(default=50, alias="PHASE1_COMMIT_BATCH_SIZE")
+    phase1_image_download_chunk_size: int = Field(default=100, alias="PHASE1_IMAGE_DOWNLOAD_CHUNK_SIZE")
+    phase1_refresh_after_hours: int | None = Field(default=None, alias="PHASE1_REFRESH_AFTER_HOURS")
+    phase5_skip_analyzed_images: bool = Field(default=True, alias="PHASE5_SKIP_ANALYZED_IMAGES")
+    phase6_skip_analyzed_images: bool = Field(default=True, alias="PHASE6_SKIP_ANALYZED_IMAGES")
+    pipeline_lock_path: str = Field(default="./.cache/pipeline.lock", alias="PIPELINE_LOCK_PATH")
+    pipeline_enforce_single_run: bool = Field(default=True, alias="PIPELINE_ENFORCE_SINGLE_RUN")
+    image_download_requests_per_minute: int = Field(default=120, alias="IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE")
+    fx_gbp_to_eur: float | None = Field(default=1.17, alias="FX_GBP_TO_EUR")
     title_match_min_score_for_pricing: float = Field(default=0.88, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
     title_match_min_score_non_mtg: float = Field(default=0.98, alias="TITLE_MATCH_MIN_SCORE_NON_MTG")
     cardmarket_max_unit_price_eur: float = Field(default=250.0, alias="CARDMARKET_MAX_UNIT_PRICE_EUR")
@@ -104,7 +113,8 @@ class Settings(BaseSettings):
             "PIPELINE_MAX_IMAGE_WORKERS": self.pipeline_max_image_workers,
             "PIPELINE_MAX_DOWNLOAD_WORKERS": self.pipeline_max_download_workers,
             "PIPELINE_MAX_TITLE_MATCH_WORKERS": self.pipeline_max_title_match_workers,
-            "TITLE_MATCH_PREFILTER_SIZE": self.title_match_prefilter_size,
+            "PHASE1_COMMIT_BATCH_SIZE": self.phase1_commit_batch_size,
+            "PHASE1_IMAGE_DOWNLOAD_CHUNK_SIZE": self.phase1_image_download_chunk_size,
         }
         for key, value in positive_fields.items():
             if value <= 0:
@@ -157,4 +167,13 @@ class Settings(BaseSettings):
             )
 
         return self
+
+    @property
+    def fx_rates_to_base(self) -> dict[str, float]:
+        """Currency code -> multiply-by rate to reach BASE_CURRENCY."""
+        target = self.base_currency.upper()
+        rates: dict[str, float] = {}
+        if target == "EUR" and self.fx_gbp_to_eur is not None:
+            rates["GBP"] = self.fx_gbp_to_eur
+        return rates
 

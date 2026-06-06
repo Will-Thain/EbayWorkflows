@@ -28,12 +28,16 @@ Define all required environment variables, defaults, and validation rules before
 - `EBAY_USE_SANDBOX` (default `false`; selects which credential pair is used for OAuth and Browse)
 - `EBAY_MARKETPLACE_ID` (default `EBAY_GB`)
 - `EBAY_PAGE_SIZE` (default `50`)
-- `EBAY_MAX_PAGES_PER_RUN` (default `20`)
+- `EBAY_MAX_PAGES_PER_RUN` (default `20`; used when CLI `--max-pages` is omitted)
 - `EBAY_REQUESTS_PER_MINUTE` (required when `ENABLE_EBAY_API=true`, provider-safe cap)
+- `PHASE1_SKIP_EXISTING_LISTINGS` (default `true`; skip listings already stored by `external_listing_id`)
+- `PHASE1_COMMIT_BATCH_SIZE` (default `50`; commit listing writes every N upserts during Phase 1)
+- `PHASE1_IMAGE_DOWNLOAD_CHUNK_SIZE` (default `100`; download and commit images in chunks)
 
 ## Scryfall
 
 - `SCRYFALL_BULK_URI` (required)
+- `SCRYFALL_BULK_CACHE_PATH` (default `./data/scryfall/default-cards.json`)
 - `SCRYFALL_SYNC_INTERVAL_HOURS` (default `24`)
 - `SCRYFALL_REQUESTS_PER_MINUTE` (default `30`)
 
@@ -48,6 +52,8 @@ Define all required environment variables, defaults, and validation rules before
 - `IMAGE_DOWNLOAD_TIMEOUT_MS` (default `20000`)
 - `OCR_ENGINE` (default `paddleocr`)
 - `FAISS_INDEX_PATH` (required when vector search enabled)
+- `FAISS_TOP_K` (default `5`)
+- `FAISS_BUILD_MAX_CARDS` (default `10000`; subset of Scryfall art indexed by `build-faiss-index`)
 - `OPENCLIP_MODEL_NAME` (default `ViT-B-32`)
 - `TORCH_DEVICE` (default `cpu`; `cuda` for NVIDIA, `directml` for AMD on Windows with `torch-directml`)
 - `EMBEDDING_BATCH_SIZE` (default `32`; batch size for OpenCLIP image embedding)
@@ -58,7 +64,6 @@ Define all required environment variables, defaults, and validation rules before
 - `PIPELINE_MAX_TITLE_MATCH_WORKERS` (default `12`; parallel workers for Phase 2 title matching)
 - `TITLE_MATCH_PREFILTER_SIZE` (default `512`; max Scryfall names scored per listing after token pre-filter)
 - `PHASE2_SKIP_UNCHANGED_LISTINGS` (default `true`; skip title match when stored evidence title equals current listing title)
-- `PHASE1_SKIP_EXISTING_LISTINGS` (default `true`; skip eBay listings already stored by `external_listing_id`)
 - `TESSERACT_CMD` (optional; path to `tesseract.exe` on Windows)
 - `TITLE_MATCH_MIN_SCORE_FOR_PRICING` (default `0.88`; minimum fuzzy match score to attach Cardmarket prices)
 - `TITLE_MATCH_MIN_SCORE_NON_MTG` (default `0.98`; stricter threshold when listing title looks non-MTG)

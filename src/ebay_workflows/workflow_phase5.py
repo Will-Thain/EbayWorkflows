@@ -265,7 +265,23 @@ def run_phase5_ocr_verification(
                 _process_mock_row(listing_image, row)
         elif use_real_ocr:
             images_skipped_no_visible_cards = 0
-            analyses = _run_parallel_real_ocr(listing_images)
+            images_skipped_already_analyzed = 0
+            eligible_images = list(listing_images)
+            if settings.phase5_skip_analyzed_images:
+                filtered: list[ListingImage] = []
+                for img in eligible_images:
+                    has_regions = session.execute(
+                        select(ImageDetection.id).where(
+                            ImageDetection.listing_image_id == img.id,
+                            ImageDetection.detection_type == "card_region",
+                        ).limit(1)
+                    ).first()
+                    if has_regions:
+                        images_skipped_already_analyzed += 1
+                        continue
+                    filtered.append(img)
+                eligible_images = filtered
+            analyses = _run_parallel_real_ocr(eligible_images)
             by_image_id = {str(img.id): img for img in listing_images}
             for analysis in analyses:
                 listing_image = by_image_id.get(analysis.listing_image_id)
@@ -290,6 +306,8 @@ def run_phase5_ocr_verification(
         }
         if use_real_ocr and not mock_ocr_file:
             metrics["images_skipped_no_visible_cards"] = images_skipped_no_visible_cards
+            if settings.phase5_skip_analyzed_images:
+                metrics["images_skipped_already_analyzed"] = images_skipped_already_analyzed
         step.metrics_json = metrics
         run.status = "succeeded"
         run.finished_at = _now()

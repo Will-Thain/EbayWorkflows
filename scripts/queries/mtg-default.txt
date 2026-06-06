@@ -1,0 +1,7 @@
+# One eBay search query per line. Lines starting with # are ignored.
+# Rotate queries across runs to work around the ~10,000 result offset cap per query.
+magic the gathering mtg bulk lot
+magic the gathering rare lot
+mtg bulk job lot commons
+mtg mythic rare bundle
+magic the gathering collection lot

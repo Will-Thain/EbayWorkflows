@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..models import ScryfallCard
 from .openclip_runtime import embed_image_file, embed_image_paths
+from .progress_report import emit_progress
 
 
 @dataclass(slots=True)
@@ -92,6 +93,10 @@ def build_faiss_index(
     matrix_rows: list[np.ndarray] = []
     indexed_ids: list[str] = []
     indexed_names: list[str] = []
+    total_paths = len(pending_paths)
+
+    if total_paths:
+        emit_progress(0, total_paths, unit="embeddings")
 
     for start in range(0, len(pending_paths), batch_size):
         chunk_paths = pending_paths[start : start + batch_size]
@@ -112,6 +117,10 @@ def build_faiss_index(
                 matrix_rows.append(vector[0])
                 indexed_ids.append(card_id)
                 indexed_names.append(card_name)
+
+        done = min(start + len(chunk_paths), total_paths)
+        if done % (batch_size * 5) == 0 or done == total_paths:
+            emit_progress(done, total_paths, unit="embeddings")
 
     if not matrix_rows:
         raise ValueError("Could not embed any Scryfall art images for FAISS index.")

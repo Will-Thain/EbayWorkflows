@@ -26,6 +26,7 @@ from .services.bulk_lot_detection import (
     detect_lot_cards_from_image,
     detected_lot_cards_to_payload,
 )
+from .services.currency import listing_total_cost_base
 from .services.ev_guardrails import cap_ev_adjusted, sanitize_unit_price, title_match_allowed_for_pricing
 from .services.listing_filters import is_bulk_lot_title
 from .services.progress_report import emit_progress
@@ -179,7 +180,7 @@ def _process_lot_cards_for_image(
     if len(lot_items) < settings.phase6_min_lot_detections:
         return detections_created, ocr_rows_created, None
 
-    listing_cost = _to_decimal(listing.price_amount) + _to_decimal(listing.shipping_amount)
+    listing_cost = listing_total_cost_base(listing, settings)
     ev_raw = lot_total - listing_cost
     max_lot_total = listing_cost * Decimal(str(settings.phase6_max_lot_ev_multiple))
     if lot_total > max_lot_total:
@@ -326,6 +327,15 @@ def run_phase6_bulk_lot_detection(
                 if settings.phase6_bulk_listings_only and not is_bulk_lot_title(listing.title):
                     listings_skipped_not_bulk += 1
                     continue
+                if settings.phase6_skip_analyzed_images:
+                    has_lot = session.execute(
+                        select(ImageDetection.id).where(
+                            ImageDetection.listing_image_id == img.id,
+                            ImageDetection.detection_type == "lot_card",
+                        ).limit(1)
+                    ).first()
+                    if has_lot:
+                        continue
                 eligible.append(img)
             workers = max(1, int(getattr(settings, "pipeline_max_image_workers", 4)))
 

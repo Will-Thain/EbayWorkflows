@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config import Settings
 from ..models import Listing, ListingCardCandidate
+from .currency import listing_total_cost_base
 from .ev_guardrails import cap_ev_adjusted
 
 # Versioned weights for v2_hybrid scoring.
@@ -63,7 +64,10 @@ def compute_listing_score_hybrid(
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     if not candidates:
-        listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+        if settings is None:
+            listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+        else:
+            listing_cost = listing_total_cost_base(listing, settings)
         return {
             "ev_raw": -listing_cost,
             "confidence_score": Decimal("0"),
@@ -100,7 +104,10 @@ def compute_listing_score_hybrid(
             }
         )
 
-    listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+    if settings is None:
+        listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+    else:
+        listing_cost = listing_total_cost_base(listing, settings)
     ev_raw = gross_value - listing_cost
     confidence_score = confidence_total / Decimal(str(max(matched, 1)))
     risk_score = Decimal("1") - confidence_score

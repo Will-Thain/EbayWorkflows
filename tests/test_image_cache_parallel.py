@@ -8,7 +8,7 @@ from ebay_workflows.services.image_cache import download_many_to_cache
 def test_download_many_to_cache_deduplicates_urls() -> None:
     urls = ["https://example.com/a.jpg", "https://example.com/a.jpg", "https://example.com/b.jpg"]
 
-    def fake_download(url: str, cache_dir: str, timeout_ms: int) -> tuple[str, str]:
+    def fake_download(url: str, cache_dir: str, timeout_ms: int, **kwargs: object) -> tuple[str, str]:
         return f"/tmp/{url.split('/')[-1]}", f"hash-{url}"
 
     with patch("ebay_workflows.services.image_cache.download_to_cache", side_effect=fake_download):
@@ -20,7 +20,7 @@ def test_download_many_to_cache_deduplicates_urls() -> None:
 
 
 def test_download_many_to_cache_records_failures() -> None:
-    def fake_download(url: str, cache_dir: str, timeout_ms: int) -> tuple[str, str]:
+    def fake_download(url: str, cache_dir: str, timeout_ms: int, **kwargs: object) -> tuple[str, str]:
         if url.endswith("bad.jpg"):
             raise RuntimeError("network down")
         return f"/tmp/{url.split('/')[-1]}", "ok"

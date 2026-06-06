@@ -17,11 +17,14 @@ from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.cardmarket_bulk import download_and_build_singles_csv
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
-from .services.embedding_index import build_faiss_index
+from .services.embedding_index import build_faiss_index, index_exists
+from .services.db_indexes import ensure_performance_indexes
+from .services.health_checks import collect_operational_health
+from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
-from .workflow_phase1 import run_phase1
+from .workflow_phase1 import retry_failed_image_downloads, run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
 from .workflow_phase4 import run_phase4_ranking
@@ -99,6 +102,22 @@ def validate_env() -> None:
         "sandbox" if settings.ebay_use_sandbox else "production",
     )
     table.add_row("EBAY_REQUESTS_PER_MINUTE", str(settings.ebay_requests_per_minute or "n/a"))
+    table.add_row("EBAY_PAGE_SIZE", str(settings.ebay_page_size))
+    table.add_row("EBAY_MAX_PAGES_PER_RUN", str(settings.ebay_max_pages_per_run))
+    table.add_row(
+        "Max listings per query (cap)",
+        str(max_listings_per_query(settings, settings.ebay_max_pages_per_run)),
+    )
+    table.add_row("PHASE1_COMMIT_BATCH_SIZE", str(settings.phase1_commit_batch_size))
+    table.add_row("PHASE1_SKIP_EXISTING_LISTINGS", str(settings.phase1_skip_existing_listings))
+    table.add_row("PHASE1_REFRESH_AFTER_HOURS", str(settings.phase1_refresh_after_hours or "disabled"))
+    table.add_row("FX_GBP_TO_EUR", str(settings.fx_gbp_to_eur or "n/a"))
+    table.add_row("PHASE5_SKIP_ANALYZED_IMAGES", str(settings.phase5_skip_analyzed_images))
+    table.add_row("PIPELINE_ENFORCE_SINGLE_RUN", str(settings.pipeline_enforce_single_run))
+    faiss_ready = index_exists(settings.faiss_index_path)
+    table.add_row("FAISS_INDEX_PATH", settings.faiss_index_path)
+    table.add_row("FAISS_INDEX_READY", "yes" if faiss_ready else "no — run build-faiss-index")
+    table.add_row("FAISS_BUILD_MAX_CARDS", str(settings.faiss_build_max_cards))
     table.add_row("SCRYFALL_REQUESTS_PER_MINUTE", str(settings.scryfall_requests_per_minute))
     table.add_row("CARDMARKET_BULK_FILE_PATH", settings.cardmarket_bulk_file_path)
     table.add_row("CARDMARKET_BULK_REFRESH_HOURS", str(settings.cardmarket_bulk_refresh_hours))
@@ -113,6 +132,41 @@ def validate_env() -> None:
     table.add_row("TITLE_MATCH_PREFILTER_SIZE", str(settings.title_match_prefilter_size))
     table.add_row("PHASE2_SKIP_UNCHANGED_LISTINGS", str(settings.phase2_skip_unchanged_listings))
     console.print(table)
+
+    try:
+        session_factory = build_session_factory(settings)
+        with session_factory() as session:
+            health = collect_operational_health(session, settings)
+        warn_table = Table(title="Operational Health")
+        warn_table.add_column("Check", style="cyan")
+        warn_table.add_column("Status", style="yellow")
+        warnings_added = 0
+        if health.get("faiss_index_incomplete"):
+            warnings_added += 1
+            warn_table.add_row(
+                "FAISS index",
+                f"incomplete ({health['faiss_vector_count']}/{health['faiss_build_max_cards']} vectors)",
+            )
+        if health.get("cardmarket_bulk_stale"):
+            warnings_added += 1
+            warn_table.add_row(
+                "Cardmarket bulk",
+                f"stale ({health['cardmarket_bulk_age_hours']:.1f}h old)",
+            )
+        if health.get("cardmarket_bulk_missing"):
+            warnings_added += 1
+            warn_table.add_row("Cardmarket bulk", "missing — run download-cardmarket-bulk")
+        if health.get("failed_image_downloads", 0) > 0:
+            warnings_added += 1
+            warn_table.add_row(
+                "Failed images",
+                f"{health['failed_image_downloads']} — run retry-failed-images",
+            )
+        if warnings_added:
+            console.print(warn_table)
+    except OperationalError:
+        console.print("[yellow]Operational health checks skipped (database unavailable).[/yellow]")
+
     console.print("[bold green]Environment validation passed.[/bold green]")
 
 
@@ -120,7 +174,11 @@ def validate_env() -> None:
 def run_workflow(
     query: str = typer.Option(..., "--query", help="Search query to execute"),
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Avoid any write operations"),
-    max_pages: int = typer.Option(1, "--max-pages", help="Max pages to fetch from provider"),
+    max_pages: int | None = typer.Option(
+        None,
+        "--max-pages",
+        help="Max pages to fetch (default: EBAY_MAX_PAGES_PER_RUN from .env)",
+    ),
     mock_input_file: str | None = typer.Option(
         None,
         "--mock-input-file",
@@ -130,6 +188,11 @@ def run_workflow(
         False,
         "--download-images/--no-download-images",
         help="Download listing images into local cache",
+    ),
+    queries_file: str | None = typer.Option(
+        None,
+        "--queries-file",
+        help="Text file with one eBay search query per line (rotates past 10k offset cap)",
     ),
 ) -> None:
     """Run Milestone 1 Phase 1 ingestion workflow."""
@@ -150,15 +213,19 @@ def run_workflow(
         console.print("No persistence executed in dry-run mode.")
         return
 
+    pages = resolve_max_pages(max_pages, settings)
+    console.print(f"Fetching up to [cyan]{pages}[/cyan] pages ({settings.ebay_page_size} items/page).")
+
     session_factory = build_session_factory(settings)
     with session_factory() as session:
         run_id = run_phase1(
             session=session,
             settings=settings,
             query=query,
-            max_pages=max_pages,
+            max_pages=pages,
             mock_input_file=mock_input_file,
             download_images=download_images,
+            queries_file=queries_file,
         )
     console.print("[bold green]Phase 1 completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
@@ -196,10 +263,52 @@ def init_db() -> None:
     engine = build_engine(settings)
     try:
         Base.metadata.create_all(engine)
+        indexes = ensure_performance_indexes(engine)
     except OperationalError as exc:
         console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
         raise typer.Exit(code=5) from exc
     console.print("[bold green]Database schema initialized.[/bold green]")
+    if indexes:
+        console.print(f"Performance indexes ensured ({len(indexes)}).")
+
+
+@app.command("ensure-db-indexes")
+def ensure_db_indexes() -> None:
+    """Create idempotent performance indexes on an existing database."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot ensure indexes:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    engine = build_engine(settings)
+    try:
+        indexes = ensure_performance_indexes(engine)
+    except OperationalError as exc:
+        console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
+        raise typer.Exit(code=5) from exc
+    console.print(f"[bold green]Performance indexes ensured ({len(indexes)}).[/bold green]")
+
+
+@app.command("retry-failed-images")
+def retry_failed_images_cmd() -> None:
+    """Re-download listing images that previously failed in Phase 1."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot retry images:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        metrics = retry_failed_image_downloads(session, settings)
+
+    table = Table(title="Image Retry Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in metrics.items():
+        table.add_row(key, str(value))
+    console.print(table)
 
 
 @app.command("sync-scryfall")
@@ -512,7 +621,11 @@ def data_integrity_check() -> None:
 @app.command("run-resumable-pipeline")
 def run_resumable_pipeline_cmd(
     query: str = typer.Option("mtg lot", "--query", help="Search query for phase 1 ingestion"),
-    max_pages: int = typer.Option(1, "--max-pages", help="Max pages to fetch in phase 1"),
+    max_pages: int | None = typer.Option(
+        None,
+        "--max-pages",
+        help="Max pages to fetch in phase 1 (default: EBAY_MAX_PAGES_PER_RUN)",
+    ),
     mock_input_file: str | None = typer.Option(
         None,
         "--mock-input-file",
@@ -559,9 +672,10 @@ def run_resumable_pipeline_cmd(
         console.print(f"[bold red]Cannot start resumable pipeline:[/bold red] {exc}")
         raise typer.Exit(code=2) from exc
 
+    pages = resolve_max_pages(max_pages, settings)
     cfg = ResumablePipelineConfig(
         query=query,
-        max_pages=max_pages,
+        max_pages=pages,
         mock_input_file=mock_input_file,
         download_images=download_images,
         top_k=top_k,
