@@ -65,8 +65,8 @@ def resolve_lot_crop_match(
         title_index,
         set_collector_index,
         card_by_id,
-        prefilter_size=512,
-        score_cutoff=65.0,
+        prefilter_size=settings.title_match_prefilter_size,
+        score_cutoff=settings.title_match_score_cutoff,
         extra_identifiers=identifiers,
     )
 

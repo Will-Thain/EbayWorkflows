@@ -27,6 +27,7 @@ from .services.embedding_index import (
 )
 from .services.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
 from .services.health_checks import collect_operational_health
+from .services.match_stats import collect_match_stats
 from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
 from .services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
@@ -148,6 +149,11 @@ def validate_env() -> None:
     table.add_row("CARD_SET_SYMBOL_MATCH_ENABLED", str(settings.card_set_symbol_match_enabled))
     table.add_row("IMAGE_EVIDENCE_MIN_FAISS_SCORE", str(settings.image_evidence_min_faiss_score))
     table.add_row("IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE", str(settings.image_evidence_min_mana_confidence))
+    table.add_row("ALIGN_MIN_CONFIDENCE", str(settings.align_min_confidence))
+    table.add_row("VERIFY_NAME_HARD_MIN", str(settings.verify_name_hard_min))
+    table.add_row("VERIFY_NAME_STRONG_MIN", str(settings.verify_name_strong_min))
+    table.add_row("VERIFY_SYMBOL_STRONG_MIN", str(settings.verify_symbol_strong_min))
+    table.add_row("FAISS_PROPOSE_CANDIDATES", str(settings.faiss_propose_candidates))
     table.add_row("PHASE2_SKIP_UNCHANGED_LISTINGS", str(settings.phase2_skip_unchanged_listings))
     console.print(table)
 
@@ -191,6 +197,13 @@ def validate_env() -> None:
             warn_table.add_row(
                 "Set symbol templates",
                 f"low count ({health.get('set_symbol_template_count', 0)}) — run build-set-symbol-templates",
+            )
+        if health.get("verify_thresholds_invalid"):
+            warnings_added += 1
+            keys = ", ".join(health.get("invalid_threshold_keys", []))
+            warn_table.add_row(
+                "Verify thresholds",
+                f"out of range (0, 1]: {keys}",
             )
         if warnings_added:
             console.print(warn_table)
@@ -751,6 +764,43 @@ def clear_match_data(
         "[bold green]Match data cleared.[/bold green] "
         "Listings and downloaded images were kept. Run [cyan]./scripts/reanalyze-matching.ps1[/cyan] next."
     )
+
+
+@app.command("match-stats")
+def match_stats() -> None:
+    """Print verification and ranking counts from the current database."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        stats = collect_match_stats(session)
+
+    table = Table(title="Match Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    table.add_row("Listings", str(stats["total_listings"]))
+    table.add_row("Card candidates", str(stats["total_candidates"]))
+    table.add_row("Scored listings", str(stats["scored_listings"]))
+    table.add_row("Verified listings (distinct)", str(stats["verified_listings"]))
+    table.add_row("Verified candidates", str(stats["verified_candidates"]))
+    table.add_row("Pricing-eligible candidates", str(stats["pricing_eligible_candidates"]))
+    table.add_row("Listings with rank_value > 0", str(stats["listings_with_positive_rank"]))
+    console.print(table)
+
+    sources = stats.get("verification_source_counts") or {}
+    if sources:
+        src_table = Table(title="Verification sources (image_verified=true)")
+        src_table.add_column("Source", style="cyan")
+        src_table.add_column("Count", style="green", justify="right")
+        for source, count in sorted(sources.items()):
+            src_table.add_row(source, str(count))
+        console.print(src_table)
+    else:
+        console.print("[yellow]No verified candidates in database yet.[/yellow]")
 
 
 @app.command("data-integrity-check")

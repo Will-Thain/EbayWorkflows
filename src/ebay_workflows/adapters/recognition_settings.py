@@ -34,6 +34,8 @@ def recognition_settings_from_app(settings: Settings) -> RecognitionSettings:
         verify_name_strong_min=settings.verify_name_strong_min,
         verify_symbol_strong_min=settings.verify_symbol_strong_min,
         faiss_propose_candidates=settings.faiss_propose_candidates,
+        title_match_prefilter_size=settings.title_match_prefilter_size,
+        title_match_score_cutoff=settings.title_match_score_cutoff,
     )
 
 
@@ -73,4 +75,6 @@ def coerce_recognition_settings(settings: Settings | RecognitionSettings) -> Rec
         verify_name_strong_min=getattr(settings, "verify_name_strong_min", 0.88),
         verify_symbol_strong_min=getattr(settings, "verify_symbol_strong_min", 0.55),
         faiss_propose_candidates=getattr(settings, "faiss_propose_candidates", True),
+        title_match_prefilter_size=getattr(settings, "title_match_prefilter_size", 512),
+        title_match_score_cutoff=getattr(settings, "title_match_score_cutoff", 65.0),
     )

@@ -1,22 +1,44 @@
+"""eBay integration for set-symbol templates: build stays here; match logic in package."""
+
 from __future__ import annotations
 
 import httpx
 from pathlib import Path
 from typing import Iterable
 
+from mtg_card_recognition.zones.symbol import (
+    clear_set_symbol_template_cache,
+    match_set_symbol as _match_set_symbol,
+    set_symbol_template_dir as _set_symbol_template_dir,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
 from ..models import ScryfallCard
 from .card_align import normalize_card_image, soft_resize_card_image
 from .card_zones import _crop_normalized, detect_frame_layout, zones_for_layout
 
-_TEMPLATE_CACHE: dict[str, dict[str, object]] = {}
-
 
 def set_symbol_template_dir(settings: Settings) -> Path:
-    return Path(settings.image_cache_dir) / "set_symbol_templates"
+    return _set_symbol_template_dir(coerce_recognition_settings(settings))
+
+
+def match_set_symbol(
+    symbol_crop_path: str,
+    settings: Settings,
+    *,
+    min_score: float | None = None,
+    set_code_hints: Iterable[str] | None = None,
+) -> tuple[str | None, float]:
+    """Match a set-symbol crop against cached templates (delegates to mtg_card_recognition)."""
+    return _match_set_symbol(
+        symbol_crop_path,
+        coerce_recognition_settings(settings),
+        min_score=min_score,
+        set_code_hints=set_code_hints,
+    )
 
 
 def _download_file(url: str, dest: Path, timeout_ms: int) -> bool:
@@ -31,44 +53,6 @@ def _download_file(url: str, dest: Path, timeout_ms: int) -> bool:
         return False
 
 
-def _load_template_matrix(settings: Settings) -> dict[str, object]:
-    import cv2  # type: ignore[import-not-found]
-    import numpy as np  # type: ignore[import-not-found]
-
-    cache_key = str(set_symbol_template_dir(settings).resolve())
-    cached = _TEMPLATE_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    template_dir = set_symbol_template_dir(settings)
-    codes: list[str] = []
-    vectors: list[np.ndarray] = []
-    if template_dir.is_dir():
-        for template_path in sorted(template_dir.glob("*.png")):
-            if template_path.stem.startswith("_"):
-                continue
-            template = cv2.imread(str(template_path), cv2.IMREAD_GRAYSCALE)
-            if template is None:
-                continue
-            if template.shape != (48, 48):
-                template = cv2.resize(template, (48, 48), interpolation=cv2.INTER_AREA)
-            flat = template.astype(np.float32).reshape(-1)
-            norm = float(np.linalg.norm(flat))
-            if norm > 0:
-                flat = flat / norm
-            codes.append(template_path.stem.upper())
-            vectors.append(flat)
-
-    matrix = np.vstack(vectors) if vectors else np.empty((0, 48 * 48), dtype=np.float32)
-    payload: dict[str, object] = {"codes": codes, "matrix": matrix}
-    _TEMPLATE_CACHE[cache_key] = payload
-    return payload
-
-
-def clear_set_symbol_template_cache() -> None:
-    _TEMPLATE_CACHE.clear()
-
-
 def build_set_symbol_templates(session: Session, settings: Settings) -> dict[str, int]:
     """Build one normalized set-symbol template per set from a reference Scryfall card image."""
     import cv2  # type: ignore[import-not-found]
@@ -80,22 +64,32 @@ def build_set_symbol_templates(session: Session, settings: Settings) -> dict[str
     align_dir.mkdir(parents=True, exist_ok=True)
 
     rows = session.execute(
-        select(ScryfallCard.set_code, ScryfallCard.image_normal)
-        .where(ScryfallCard.set_code.is_not(None), ScryfallCard.image_normal.is_not(None))
+        select(ScryfallCard)
+        .where(ScryfallCard.image_normal.isnot(None))
+        .where(ScryfallCard.set_code.isnot(None))
         .order_by(ScryfallCard.set_code)
-    ).all()
+    ).scalars()
 
     seen: set[str] = set()
     built = 0
     skipped = 0
 
-    for set_code, image_url in rows:
-        code = (set_code or "").strip().upper()
-        if not code or code in seen or not image_url:
+    for card in rows:
+        code = (card.set_code or "").strip().upper()
+        if not code or code in seen:
             continue
         seen.add(code)
 
-        raw_path = template_dir / f"{code.lower()}_ref.jpg"
+        template_path = template_dir / f"{code.lower()}.png"
+        if template_path.is_file():
+            continue
+
+        image_url = card.image_normal
+        if not image_url:
+            skipped += 1
+            continue
+
+        raw_path = template_dir / "_raw" / f"{code.lower()}.jpg"
         if not raw_path.is_file():
             if not _download_file(image_url, raw_path, settings.image_download_timeout_ms):
                 skipped += 1
@@ -127,62 +121,16 @@ def build_set_symbol_templates(session: Session, settings: Settings) -> dict[str
             continue
 
         resized = cv2.resize(crop, (48, 48), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(str(template_dir / f"{code.lower()}.png"), resized)
+        cv2.imwrite(str(template_path), resized)
         built += 1
 
     clear_set_symbol_template_cache()
     return {"templates_built": built, "sets_seen": len(seen), "templates_skipped": skipped}
 
 
-def match_set_symbol(
-    symbol_crop_path: str,
-    settings: Settings,
-    *,
-    min_score: float | None = None,
-    set_code_hints: Iterable[str] | None = None,
-) -> tuple[str | None, float]:
-    """Match a set-symbol crop against cached templates via normalized dot product."""
-    import cv2  # type: ignore[import-not-found]
-    import numpy as np  # type: ignore[import-not-found]
-
-    threshold = min_score if min_score is not None else settings.card_set_symbol_min_score
-    path = Path(symbol_crop_path)
-    if not path.is_file():
-        return None, 0.0
-
-    query = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-    if query is None or query.size == 0:
-        return None, 0.0
-    query = cv2.resize(query, (48, 48), interpolation=cv2.INTER_AREA)
-    flat = query.astype(np.float32).reshape(-1)
-    norm = float(np.linalg.norm(flat))
-    if norm <= 0:
-        return None, 0.0
-    flat = flat / norm
-
-    cache = _load_template_matrix(settings)
-    codes: list[str] = cache["codes"]  # type: ignore[assignment]
-    matrix: np.ndarray = cache["matrix"]  # type: ignore[assignment]
-    if matrix.size == 0:
-        return None, 0.0
-
-    hints = {str(h).strip().upper() for h in (set_code_hints or []) if str(h).strip()}
-    if hints:
-        indices = [index for index, code in enumerate(codes) if code in hints]
-        if indices:
-            subset = matrix[indices]
-            scores = subset @ flat
-            best_pos = int(scores.argmax())
-            best_score = float(scores[best_pos])
-            best_code = codes[indices[best_pos]]
-            if best_score >= threshold:
-                return best_code, best_score
-            return None, best_score
-
-    scores = matrix @ flat
-    best_pos = int(scores.argmax())
-    best_score = float(scores[best_pos])
-    best_code = codes[best_pos]
-    if best_score < threshold:
-        return None, best_score
-    return best_code, best_score
+__all__ = [
+    "build_set_symbol_templates",
+    "clear_set_symbol_template_cache",
+    "match_set_symbol",
+    "set_symbol_template_dir",
+]

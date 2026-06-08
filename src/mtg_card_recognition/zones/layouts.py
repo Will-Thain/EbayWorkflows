@@ -289,6 +289,7 @@ def extract_art_zone_from_card_image(
     output_path: str,
     *,
     align_enabled: bool = True,
+    scryfall_layout: str | None = None,
 ) -> str | None:
     """Crop the art zone from a full card image for FAISS indexing (matches query domain)."""
     path = Path(full_image_path)
@@ -316,7 +317,7 @@ def extract_art_zone_from_card_image(
     if image is None:
         return None
 
-    layout = detect_frame_layout(image)
+    layout = scryfall_layout or detect_frame_layout(image)
     zone_map = zones_for_layout(layout)
     art_rect = zone_map.get("art")
     if art_rect is None:

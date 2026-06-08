@@ -77,4 +77,19 @@ def collect_operational_health(session: Session, settings: Settings) -> dict[str
     if settings.card_set_symbol_match_enabled and template_count < 50:
         health["set_symbol_templates_missing"] = True
 
+    health["verify_name_hard_min"] = settings.verify_name_hard_min
+    health["verify_name_strong_min"] = settings.verify_name_strong_min
+    health["verify_symbol_strong_min"] = settings.verify_symbol_strong_min
+    health["faiss_propose_candidates"] = settings.faiss_propose_candidates
+    for key, value in (
+        ("verify_name_hard_min", settings.verify_name_hard_min),
+        ("verify_name_strong_min", settings.verify_name_strong_min),
+        ("verify_symbol_strong_min", settings.verify_symbol_strong_min),
+        ("align_min_confidence", settings.align_min_confidence),
+        ("image_evidence_min_faiss_score", settings.image_evidence_min_faiss_score),
+    ):
+        if not 0.0 < float(value) <= 1.0:
+            health["verify_thresholds_invalid"] = True
+            health.setdefault("invalid_threshold_keys", []).append(key)
+
     return health

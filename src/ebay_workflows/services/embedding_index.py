@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings
 from ..models import ListingCardCandidate, ScryfallCard
+from mtg_card_recognition.zones.layouts import layout_from_scryfall_payload
 from .card_zones import extract_art_zone_from_card_image
 from .openclip_runtime import embed_image_file, embed_image_paths
 from .progress_report import emit_progress
@@ -194,10 +195,12 @@ def _prepare_art_paths(
         if use_art_zone:
             zone_path = art_zone_dir / f"{card.id}_art.jpg"
             if not zone_path.is_file():
+                layout_hint = layout_from_scryfall_payload(card.raw_payload_json)
                 extracted = extract_art_zone_from_card_image(
                     str(art_path),
                     str(zone_path),
                     align_enabled=settings.card_zone_align_enabled,
+                    scryfall_layout=layout_hint,
                 )
                 if not extracted:
                     continue

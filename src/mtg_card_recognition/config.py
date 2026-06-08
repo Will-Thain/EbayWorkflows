@@ -38,3 +38,5 @@ class RecognitionSettings:
     verify_name_strong_min: float = 0.88
     verify_symbol_strong_min: float = 0.55
     faiss_propose_candidates: bool = True
+    title_match_prefilter_size: int = 512
+    title_match_score_cutoff: float = 65.0
