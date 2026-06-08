@@ -14,23 +14,19 @@ $env:PHASE2_SKIP_UNCHANGED_LISTINGS = "false"
 $env:PHASE5_SKIP_ANALYZED_IMAGES = "false"
 $env:PHASE6_SKIP_ANALYZED_IMAGES = "false"
 
-$cli = Join-Path (Get-Location) ".venv\Scripts\ebay-workflows.exe"
-if (-not (Test-Path $cli)) {
-    $cli = Join-Path (Get-Location) ".venv\Scripts\python.exe"
-    function Invoke-Cli {
-        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
-        & $cli -m ebay_workflows.cli @CliArgs
-    }
-} else {
-    function Invoke-Cli {
-        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
-        & $cli @CliArgs
-    }
+$py = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+if (-not (Test-Path $py)) {
+    Write-Error "Missing .venv. Run: py -3.12 -m venv .venv; pip install -e '.[dev,gpu]'"
+}
+
+function Invoke-Cli {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
+    & $py -m ebay_workflows.cli @CliArgs
 }
 
 Write-Host "Re-analyzing matches (Phase 2-5, 3, 4 + rank; Phase 6 optional) with skip flags disabled..."
 
-Invoke-Cli @("clear-match-data", "-y")
+Invoke-Cli clear-match-data -y
 Invoke-Cli validate-env
 Invoke-Cli phase2-match-title --top-k 3
 

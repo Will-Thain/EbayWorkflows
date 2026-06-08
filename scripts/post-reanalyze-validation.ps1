@@ -6,18 +6,14 @@ Set-Location $PSScriptRoot/..
 . ./scripts/activate-dev.ps1
 $ErrorActionPreference = "Stop"
 
-$cli = Join-Path (Get-Location) ".venv\Scripts\ebay-workflows.exe"
-if (-not (Test-Path $cli)) {
-    $py = Join-Path (Get-Location) ".venv\Scripts\python.exe"
-    function Invoke-Cli {
-        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
-        & $py -m ebay_workflows.cli @CliArgs
-    }
-} else {
-    function Invoke-Cli {
-        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
-        & $cli @CliArgs
-    }
+$py = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+if (-not (Test-Path $py)) {
+    Write-Error "Missing .venv. Run: py -3.12 -m venv .venv; pip install -e '.[dev,gpu]'"
+}
+
+function Invoke-Cli {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
+    & $py -m ebay_workflows.cli @CliArgs
 }
 
 $exportPath = "./data/exports/ranked-validation.json"
