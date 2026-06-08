@@ -81,7 +81,8 @@ See `gui-application.md` and `gui-build-prerequisites.md`.
 - DB migration tests for schema integrity
 - workflow replay tests for idempotent reruns
 - evaluation set tests for OCR-only vs embedding-only vs hybrid matching
-- P0 matching fixes (single-winner EV, reprint-safe verify, set-only bug) then consensus gate per approved spec (`card-recognition-architecture.md`)
+- matching evaluation on post-consensus reanalyze (verified counts, EV sanity) per `card-recognition-architecture.md`
+- optional: PaddleOCR zones, Milo embedder, threshold calibration dataset
 
 ## Operational Checklist
 

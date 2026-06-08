@@ -150,7 +150,7 @@ Use `./scripts/reanalyze-matching.ps1`, `./scripts/rerun-image-matching.ps1`, or
 
 See `card-recognition-architecture.md` for zone layout, artifact paths, and external library comparison.
 
-### Current gate (OR — any one signal)
+### Verification gate (strict consensus — shipped)
 
 A candidate is **image-verified** only when strict zone rules pass (`mtg_card_recognition.evidence`):
 
@@ -172,5 +172,5 @@ Vectors should be built with **`FAISS_INDEX_USE_ART_ZONE=true`** (default) so em
 
 ## Phase 6: Bulk Lot Pricing
 
-Bulk listing titles are blocked from **title-only** Cardmarket pricing (`bulk_lot_title_requires_image_evidence`). Phase 6 prices individual lot crops when **crop-level** evidence passes the same image-evidence rules (set/collector, FAISS, set symbol, etc.) via `crop_match_allowed_for_pricing`.
+Bulk listing titles are blocked from **title-only** Cardmarket pricing (`bulk_lot_title_requires_image_evidence`). Phase 6 prices individual lot crops when **crop-level** evidence passes strict rules (primarily `set_collector` or verified set symbol) via `crop_match_allowed_for_pricing` — FAISS and mana alone do not verify.
 

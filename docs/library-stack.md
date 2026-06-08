@@ -4,9 +4,9 @@
 
 Production matching is a **hybrid propose-then-confirm** pipeline (see `card-recognition-architecture.md`):
 
-- **Propose (today):** Phase 2 title match only; FAISS **corroborates** existing candidate IDs (does not insert new ones)
-- **Propose (planned):** Milo HF catalog or FAISS top-1 promotion when absent from Phase 2 list
-- **Confirm (planned, blocked):** zone OCR + set/collector + symbol per **printing** — see `card-recognition-architecture.md` approved spec
+- **Propose (today):** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`, `source_method=faiss_proposal`)
+- **Propose (planned):** Milo HF catalog as alternate embedder/proposer
+- **Confirm (shipped):** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**; one verified winner per listing
 
 Core dependencies:
 
@@ -28,13 +28,13 @@ Zone fields (title, set code, collector number, symbol, mana) disambiguate what 
 
 ## Implementation Pattern (current)
 
-1. detect card regions and normalize crops with OpenCV
-2. align card, detect frame layout, extract zone strips (`card_zones.py`)
-3. OCR name/bottom/type-line; match set symbol; detect mana pips
-4. embed art-zone crop with OpenCLIP; query FAISS for top-K
-5. attach `zone_evidence` to plausible Phase 2 candidates
-6. `image_evidence` gate sets `image_verified` / `pricing_eligible`
-7. hybrid rank combines title, OCR, embedding, set/collector, price freshness
+1. detect card regions and normalize crops with OpenCV (`image_gate.py`)
+2. align card, detect frame layout, extract zone strips (`mtg_card_recognition.zones` via eBay shims)
+3. OCR name/bottom/type-line; match set symbol; detect mana pips (supporting only)
+4. embed art-zone crop with OpenCLIP; query FAISS for top-K; optional `faiss_proposal` candidate
+5. attach `zone_evidence` with provenance; `candidates_for_region_evidence` prevents reprint OCR bleed
+6. `apply_per_listing_verification_gates` sets at most one `image_verified` printing per listing
+7. hybrid rank uses `select_pricing_candidate` for singles EV
 
 ## Recommended Defaults
 

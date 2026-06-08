@@ -1,6 +1,6 @@
 # Card Recognition Architecture
 
-This document defines how EbayWorkflows identifies MTG cards from eBay listing photos: our **propose-then-confirm** design, on-disk artifacts, zone geometry, lessons from external libraries, and the **pre-implementation review** that blocks naive consensus-gate coding.
+This document defines how EbayWorkflows identifies MTG cards from eBay listing photos: our **propose-then-confirm** design, on-disk artifacts, zone geometry, lessons from external libraries, and the **strict consensus verification gate** shipped in `mtg_card_recognition` (branch `feature/card-recognition-package`).
 
 Operational runbooks: `runbook-local.md`, `large-scale-ingest.md`.
 
@@ -34,107 +34,104 @@ eBay listing photos differ from phone-scanner apps (ManaBox, CollectorVision, sc
 
 **Design choice:** treat vision as a **candidate proposer** and structured zone reads as **confirmation judges**. No external library reviewed implements multi-zone confirmation (name / bottom / symbol / mana) before pricing; that is our differentiator.
 
-**Important correction:** In code today, OpenCLIP+FAISS **does not propose** new candidates — it only attaches scores to Scryfall IDs already returned by Phase 2 title match (`apply_embedding_evidence`). Milo/eval paths are future work.
+**Proposal:** When `FAISS_PROPOSE_CANDIDATES=true` (default), Phase 5 may insert a `faiss_proposal` candidate if FAISS top-1 is absent from Phase 2 title matches; strict verification still applies. Milo/alternate embedders remain future work.
 
 ---
 
-## Pipeline overview (actual data flow)
+## Pipeline overview (shipped data flow)
 
 ```text
 Phase 2   top_k=3 title candidates per listing (often same name, different sets)
           └─ listing_card_candidates (evidence_json, pricing_eligible)
 
 Phase 5   Per listing image → per region:
-          ├─ OpenCV gate + crops (card_regions.py)
-          ├─ Align + zones (card_zones.py, zone_card_signals.py)
-          ├─ FAISS search (embedding_index.py) — hits discarded unless ID ∈ Phase 2 list
-          ├─ _update_candidate_confidence(ocr_title) — ALL name-matching reprints
-          └─ _attach_zone_evidence — OR match @ 0.55 name threshold
+          ├─ OpenCV gate + crops
+          ├─ Align + zones (mtg_card_recognition.zones)
+          ├─ FAISS search — corroborates Phase 2 IDs; optional faiss_proposal insert
+          ├─ candidates_for_region_evidence — no name-only bleed across reprints
+          └─ zone attach + verification_* provenance on detection
 
-Phase 5 end apply_image_evidence_gate on ENTIRE candidates table (global)
+Phase 5 end apply_per_listing_verification_gates — at most one verified printing per listing
 
 Phase 3   apply_price_to_evidence per candidate if pricing_eligible
 
-Phase 6   Bulk: resolve_lot_crop_match (FAISS can override title; separate rules)
+Phase 6   Bulk: resolve_lot_crop_match (set_collector + strict crop evidence)
 
-Phase 4   hybrid / v1 ranking — sums gross_value across verified top-3 candidates ⚠
+Phase 4   hybrid ranking — select_pricing_candidate (single printing for singles EV)
 ```
 
 Production phase order: **2 → 5 → 3 → 6 → 4** (`workflow-phases.md`).
 
 ### Module map
 
-| Concern | Module | Role |
-|---------|--------|------|
-| Region detection | `card_regions.py`, `image_gate.py` | Card-like blobs in listing photos |
-| Alignment | `card_align.py` | Perspective warp or soft resize (488×680) |
-| Zone geometry | `card_zones.py` | Layout templates (modern / old / DFC) |
-| Zone extraction | `zone_card_signals.py` | OCR, set symbol, mana on zone JPGs |
-| Set symbol | `set_symbol_match.py` | Per-set template matrix (48×48 dot product) |
-| Mana pips | `mana_cost.py` | HSV masks on mana-cost strip |
-| Embeddings | `openclip_runtime.py`, `embedding_index.py` | OpenCLIP ViT-B/32 + FAISS IndexFlatIP |
-| Evidence / gate | `image_evidence.py`, `ev_guardrails.py` | `image_verified`, pricing eligibility |
-| Ranking | `hybrid_scoring.py`, `workflow_phase4.py` | EV — must use **one printing per listing** (not yet enforced) |
+| Concern | Package / shim | Role |
+|---------|----------------|------|
+| Recognition core | `src/mtg_card_recognition/` | Extractable library (`RecognitionSettings`, zones, evidence) |
+| eBay adapter | `ebay_workflows.adapters.recognition_settings` | Maps `Settings` → `RecognitionSettings` |
+| Region detection | `card_regions.py`, `image_gate.py` | Card-like blobs in listing photos (eBay) |
+| Zones / OCR / align | `card_zones.py`, `zone_card_signals.py`, … shims | Delegate to `mtg_card_recognition` |
+| Set symbol build | `set_symbol_match.py` | Template download + matrix (eBay DB); match in package |
+| Embeddings | `embedding_index.py`, `openclip_runtime.py` | FAISS + OpenCLIP (eBay); vectors in `.cache/faiss/` |
+| Evidence / gate | `image_evidence.py` shim → `mtg_card_recognition.evidence` | Strict verify, per-listing winner |
+| Pricing guardrails | `ev_guardrails.py` | Title/bulk rules; only `set_collector` / `set_symbol` bypass when verified |
+| Ranking | `hybrid_scoring.py`, `workflow_phase4.py` | `select_pricing_candidate` — one printing per listing |
 
 ---
 
-## Pre-implementation review (summary)
+## Historical audit (pre-fix baseline)
 
-A detailed audit was completed before coding the consensus gate. P0 structural fixes are implemented in `mtg_card_recognition` (branch `feature/card-recognition-package`). Re-run Phase 5 reanalyze on existing caches to validate live metrics.
+A detailed audit was completed before coding the consensus gate. The issues below described **production behavior before** `feature/card-recognition-package`; all P0 items are **fixed** in `mtg_card_recognition`. Re-run Phase 5 reanalyze on existing caches to measure impact (expect fewer `image_verified` than the old ~101 OR-gate run).
 
-### Findings at a glance
+### Findings at a glance (fixed)
 
-| Severity | Issue |
-|----------|--------|
-| **P0** | One OCR string verifies **all** Phase 2 reprints (same name, different `scryfall_id`) |
-| **P0** | Phase 4 **sums** Cardmarket prices across all verified top-K candidates → inflated EV for singles |
-| **P0** | `_card_identifiers_match` returns true for **set-only** (no collector) — not a hard confirm |
-| **P0** | Mana verification uses **any color overlap** — likely false positives (39 hits in last run ≠ quality proof) |
-| **P0** | No `listing_image_id` / `detection_id` on verification evidence — stale/mixed proof |
-| **P0** | `zones_available` undefined; fallback policy unspecified |
-| **High** | Phase 5 dead branch: symbol/mana-only regions never attach `zone_evidence` |
-| **High** | Attach policy (OR @ 0.55) looser than intended verify policy |
-| **High** | Phase 5 singles vs Phase 6 lot FAISS override — inconsistent philosophy |
-| **High** | `pricing_allowed_for_candidate` trusts `embedding` and `mana_colors` sources |
-| **High** | OCR “confidence” is `len(text)/40`, not model confidence |
-| **Med** | FAISS `read_index` per query — performance, not correctness |
-| **Med** | scryglass rects ≈ our Scryfall-scan rects — **not** proof eBay zone coords are correct |
+| Severity | Issue (was) | Fix (shipped) |
+|----------|-------------|---------------|
+| **P0** | OCR verified all Phase 2 reprints | `candidates_for_region_evidence` |
+| **P0** | Phase 4 summed prices across verified top-K | `select_pricing_candidate` |
+| **P0** | Set-only match counted as collector verify | Strict set **and** collector in `evidence.gate` |
+| **P0** | Mana standalone verification | Mana supporting only; removed from pricing auto-allow |
+| **P0** | No detection provenance on evidence | `verification_*` fields on attach |
+| **P0** | `zones_available` undefined | `compute_zones_available` in `zones/signals.py` |
+| **High** | Phase 5 dead branch (symbol-only regions) | Fixed `elif zone_evidence` branch |
+| **High** | OR attach @ 0.55 looser than verify | Attach still permissive; verify gate is strict |
+| **High** | `pricing_allowed` trusted embedding/mana | Only `set_collector` / `set_symbol` when verified |
+| **Med** | FAISS `read_index` per query | Process-level index cache in `embedding_index.py` |
 
-Full edge-case catalog and rule-by-rule critique: see **Evidence model** and **Structural bugs** below.
+Remaining open items: Phase 6 FAISS override philosophy alignment, OCR confidence heuristic, scryglass rect validation on eBay crops.
 
 ---
 
-## Structural bugs (P0 — fix before consensus gate)
+## Historical P0 bugs (reference — fixed in code)
 
 ### 1. Reprint OCR bleed
 
 `workflow_phase5._update_candidate_confidence` writes identical `ocr_verification` to every candidate whose **name** fuzzy-matches the same crop OCR. Phase 2 stores up to three printings of the same name.
 
-**Required fix:** Verification must be **per printing** — require set+collector or set symbol match **for that** `scryfall_id`, never name alone across reprints.
+**Was:** Verification applied by name across reprints. **Now:** `candidates_for_region_evidence` routes by set+collector or single unambiguous name match.
 
 ### 2. Single winner for singles EV
 
 `hybrid_scoring.compute_listing_score_hybrid` and `workflow_phase4._compute_listing_score` add `gross_value` for **every** verified candidate in top-3 with a price.
 
-**Required fix:** Select **at most one** `scryfall_id` per listing for pricing and EV (highest confirmation score; tie-break by rank_position).
+**Was:** Summed all verified top-K prices. **Now:** `select_pricing_candidate` + `apply_per_listing_verification_gates`.
 
 ### 3. Set-only “collector” match
 
 `image_evidence._card_identifiers_match` returns `True` when set codes match and collector is absent.
 
-**Required fix:** `image_verification_source=set_collector` requires **parsed collector number** matching the candidate.
+**Was:** Set-only match passed. **Now:** `_card_identifiers_match_strict` requires both set and collector.
 
 ### 4. Mana as standalone verification
 
 Intersection `detected & expected` with low HSV threshold and `color_identity` fallback is too weak for pricing.
 
-**Required fix:** Mana is **supporting / tie-break only** — never `image_verified` alone; remove from `pricing_allowed_for_candidate` auto-allow list unless paired with collector proof.
+**Was:** Mana overlap could verify alone. **Now:** Mana never sets `image_verified`; removed from pricing auto-allow.
 
 ### 5. Evidence provenance
 
 Candidates do not record which image region proved the match.
 
-**Required fix:** Store `verification_detection_id`, `verification_listing_image_id`, and `verification_region_path` in `evidence_json`.
+**Was:** No provenance. **Now:** Stored on candidate `evidence_json` and nested `zone_evidence` (see `data-dictionary.md`).
 
 ### 6. Phase 5 attach dead branch
 
@@ -143,7 +140,7 @@ if fields: ... attach zone_evidence
 elif region_analysis.zone_evidence and fields:  # unreachable when fields empty
 ```
 
-Symbol/mana-only extractions never attach. Fix before consensus uses symbol.
+**Was:** Unreachable branch left symbol-only regions without detections. **Now:** Fixed; shell detection persisted for zone-only regions.
 
 ---
 
@@ -159,13 +156,13 @@ Zones are **not** stored per Scryfall card in Postgres. Three layout families in
 | `*_set_symbol.jpg` | Template match |
 | `*_mana_cost.jpg` | WUBRG pip detection (supporting only) |
 
-`detect_frame_layout()` uses heuristics (aspect, border brightness). **Planned:** map Scryfall `frame` / `layout` from `raw_payload_json` at sync.
+`detect_frame_layout()` uses heuristics (aspect, border brightness). `layout_from_scryfall_payload()` and optional `layout_hint` on `prepare_card_for_zones()` support Scryfall `frame` / `layout` when metadata is available (e.g. art-zone build).
 
 ### scryglass art rect
 
 scryglass uses `x: 0.08–0.92`, `y: 0.11–0.53` on **Scryfall scans**. Our modern art zone is similar on clean scans. **Do not assume** the same rects are optimal for skewed eBay crops or full-frame fallback (`IMAGE_ALLOW_FULL_FRAME_FALLBACK=true`).
 
-### `zones_available` (spec for implementation)
+### `zones_available` (shipped — `zones/signals.compute_zones_available`)
 
 A listing region qualifies for strict zone confirmation only when **all** hold:
 
@@ -182,44 +179,15 @@ zones_available :=
 When `zones_available` is false, use an **explicit degraded policy** (documented choice):
 
 - **Recommended:** `image_verified=false`; no image-driven Cardmarket price; title-only path remains subject to `TITLE_MATCH_MIN_SCORE_FOR_PRICING`.
-- **Not recommended:** Silent fallback to current OR gate (hides policy change).
+- **Not recommended:** Silent fallback to the old OR gate (hides policy change).
 
 ---
 
 ## Evidence model
 
-### Current behavior (OR gate — shipped)
+### Shipped verification behavior (`mtg_card_recognition.evidence`)
 
-`candidate_has_image_evidence()` returns verified if **any** signal passes:
-
-| Source | Config default | Actual strength on eBay photos |
-|--------|----------------|--------------------------------|
-| OCR name | 0.60 | Strong when strip clean; **verifies all reprints** |
-| FAISS | 0.55 | Weak (generic OpenCLIP); ~1 verification in full reanalyze |
-| Set + collector | zone bottom | **Weaker than documented** — set-only passes |
-| Set symbol | 0.45 | Moderate; hint narrowing can mis-steer |
-| Mana colors | 0.30 | **Weak** — overlap logic; suspect false positives |
-
-`region_zone_evidence_matches_card()` uses the same OR pattern at 0.55 name similarity before attaching `zone_evidence`.
-
-**Last full reanalyze (~110k art-zone FAISS):** ~101 `image_verified` listings — sources roughly OCR 61, mana 39, FAISS 1.
-
-**Do not interpret** mana 39 as validation of mana confirmation — likely OR-gate leakage given overlap logic and low thresholds.
-
-### Draft consensus gate — **REJECTED** (do not implement)
-
-The following was documented as a target but **failed review**:
-
-```text
-❌ if bottom set+collector → verified          (code allows set-only; parser noise)
-❌ elif name ≥ 0.80 AND (symbol OR mana)      (reprints; mana OR too weak)
-❌ elif name ≥ 0.65 AND symbol AND mana       (three noisy signals compound error)
-❌ else block FAISS/OCR when zones exist      (undefined zones_available; no proposer)
-```
-
-### Target behavior — **approved spec** (implement after P0)
-
-**Per listing:** at most **one** printing receives `image_verified=true` and Cardmarket pricing for singles EV.
+**Per listing:** at most **one** printing receives `image_verified=true` and Cardmarket pricing for singles EV (`apply_per_listing_verification_gates`).
 
 **Per candidate C** (when `zones_available` for the proving region):
 
@@ -245,28 +213,41 @@ SUPPORTING (ranking / tie-break / hybrid weights only):
   - Mana overlap after printing locked
   - Phase 2 title_match_score
 
-PROPOSAL (separate feature — not the gate):
-  - If embed top-1 ∉ Phase 2 candidates → insert or promote candidate, then run verification
-  - Milo HF NPZ eval on existing aligned crops without rebuilding scryfall_art/
+PROPOSAL (shipped when FAISS_PROPOSE_CANDIDATES=true):
+  - If embed top-1 ∉ Phase 2 candidates → insert faiss_proposal candidate, then run verification
+  - Milo HF NPZ eval — future work
 ```
 
-**Phase 6 bulk crops:** Keep crop-level verification; align with same printing-specific rules; FAISS override only when followed by zone confirmation (future alignment with singles).
+**Phase 6 bulk crops:** Crop-level `set_collector` and strict image evidence via `crop_match_allowed_for_pricing`. FAISS may suggest matches but does not alone verify.
 
-**Pricing guardrails:** Update `pricing_allowed_for_candidate` and `crop_match_allowed_for_pricing` to match — remove standalone `embedding` and `mana_colors` from auto-allow lists.
+**Pricing guardrails:** `pricing_allowed_for_candidate` allows image bypass only for `set_collector` and `set_symbol` when `image_verified`.
 
-**Thresholds:** `0.75`, `0.88`, `0.55` symbol are **starting points** — calibrate on a labeled set of eBay zone crops before production.
+**Thresholds:** `VERIFY_NAME_HARD_MIN` (0.75), `VERIFY_NAME_STRONG_MIN` (0.88), `VERIFY_SYMBOL_STRONG_MIN` (0.55) — calibrate on labeled eBay crops after reanalyze.
 
-### Edge cases (verification must handle)
+### Historical OR gate (pre-fix — do not restore)
+
+Before `mtg_card_recognition`, `candidate_has_image_evidence()` verified if **any** signal passed (OCR, FAISS, set-only, mana). Last OR-gate reanalyze (~110k FAISS): ~101 `image_verified` — roughly OCR 61, mana 39, FAISS 1. Mana hits were OR leakage, not quality proof.
+
+### Draft consensus gate — **REJECTED** (do not implement)
+
+```text
+❌ if bottom set+collector → verified          (allowed set-only in old code)
+❌ elif name ≥ 0.80 AND (symbol OR mana)      (reprints; mana OR too weak)
+❌ elif name ≥ 0.65 AND symbol AND mana       (three noisy signals compound error)
+❌ else block FAISS/OCR when zones exist      (undefined zones_available at time of draft)
+```
+
+### Edge cases (still apply)
 
 | Case | Risk |
 |------|------|
-| Same name, 3 Phase 2 reprints | OCR verifies all today |
+| Same name, 3 Phase 2 reprints | Mitigated by per-printing attach + single winner |
 | Basic land / `{0}` | Mana expected empty — do not use mana |
 | DFC / wrong layout | Zones cut wrong text — use Scryfall frame metadata |
 | Full-frame fallback | Zones on entire thumbnail — exclude via `zones_available` |
 | Wrong bottom OCR + symbol hints | Symbol search restricted to wrong set subset |
-| Multiple images per listing | Last region overwrites `zone_evidence` |
-| Phase 3 `pricing_eligible` default true | Stale candidates price before gate |
+| Multiple images per listing | Last region may overwrite `zone_evidence`; provenance fields identify proof source |
+| Phase 3 `pricing_eligible` default true | Phase 5 gate clears ineligible before Phase 3 in correct pipeline order |
 
 ---
 
@@ -288,7 +269,7 @@ PROPOSAL (separate feature — not the gate):
 
 | Goal | Re-download Scryfall? | Re-embed 110k? | Re-run Phase 5? |
 |------|----------------------|----------------|-----------------|
-| P0 bug fixes + consensus gate | No | No | Reanalyze recommended |
+| Consensus gate shipped (code on branch) | No | No | Reanalyze recommended |
 | PaddleOCR on zones | No | No | Yes |
 | Milo A/B on aligned crops | No | No | Eval subset |
 | Replace OpenCLIP with Milo index | No | Yes (from `scryfall_art/`) | Reanalyze |
@@ -319,19 +300,19 @@ None implement our zone confirmation layer.
 
 ---
 
-## Implementation roadmap (revised order)
+## Implementation roadmap
 
-| Step | Work | Rebuild 110k? |
-|------|------|---------------|
-| **1** | Single winner per listing for EV/pricing | No |
-| **2** | Per-printing verification; remove set-only match | No |
-| **3** | Remove mana/embedding as standalone verify; fix pricing guardrails | No |
-| **4** | Fix Phase 5 dead branch + evidence provenance fields | No |
-| **5** | Implement approved consensus spec + `zones_available` | No |
-| **6** | Embedding proposal (FAISS top-1 or Milo NPZ) | No |
-| **7** | PaddleOCR on name/bottom zones | No |
-| **8** | Milo index replace (optional) | Re-embed only |
-| **9** | Threshold calibration dataset | No |
+| Step | Work | Status | Rebuild 110k? |
+|------|------|--------|---------------|
+| **1** | Single winner per listing for EV/pricing | **Done** | No |
+| **2** | Per-printing verification; remove set-only match | **Done** | No |
+| **3** | Remove mana/embedding standalone verify; pricing guardrails | **Done** | No |
+| **4** | Phase 5 dead branch + evidence provenance | **Done** | No |
+| **5** | Consensus spec + `zones_available` | **Done** | No |
+| **6** | FAISS top-1 proposal (`FAISS_PROPOSE_CANDIDATES`) | **Done** | No |
+| **7** | PaddleOCR on name/bottom zones | Planned | No |
+| **8** | Milo index replace (optional) | Planned | Re-embed only |
+| **9** | Threshold calibration dataset | Planned | No |
 
 ---
 
@@ -339,7 +320,7 @@ None implement our zone confirmation layer.
 
 `config-contract.md`. Critical toggles:
 
-- `CARD_ZONE_*`, `FAISS_INDEX_USE_ART_ZONE`, `IMAGE_EVIDENCE_MIN_*`
+- `CARD_ZONE_*`, `FAISS_INDEX_USE_ART_ZONE`, `VERIFY_*`, `FAISS_PROPOSE_CANDIDATES`
 - `IMAGE_ALLOW_FULL_FRAME_FALLBACK` — when true, often invalidates strict zones
 - `TITLE_MATCH_MIN_SCORE_FOR_PRICING` — degraded path when image verify fails
 
@@ -349,7 +330,8 @@ None implement our zone confirmation layer.
 
 ## Related documents
 
-- `workflow-phases.md` — phase I/O; current OR vs planned consensus
-- `ranking-and-confidence.md` — single-winner EV requirement (to be enforced in code)
+- `workflow-phases.md` — phase I/O and strict verification gate
+- `ranking-and-confidence.md` — single-winner EV and evidence table
+- `data-dictionary.md` — `evidence_json` verification and provenance fields
 - `library-stack.md` — dependencies and external references
 - `future-pain-points.md` — §6 OpenCLIP weakness, disk layout

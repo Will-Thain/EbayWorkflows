@@ -22,7 +22,7 @@ The docs in this folder define:
 - `data-model.md` - PostgreSQL schema design and indexing strategy
 - `integration-specs.md` - eBay, Scryfall, and Cardmarket integration details
 - `library-stack.md` - recommended CV/OCR/embedding/vector-search libraries
-- `card-recognition-architecture.md` - matching architecture, pre-implementation review, approved verification spec (consensus gate blocked on P0 fixes)
+- `card-recognition-architecture.md` - matching architecture, `mtg_card_recognition` package, strict verification gate (shipped), historical audit
 - `ranking-and-confidence.md` - EV, risk, and confidence model definitions
 - `development-roadmap.md` - milestones, testing strategy, and delivery order
 - `implementation-spec.md` - concrete MVP build order and module plan
