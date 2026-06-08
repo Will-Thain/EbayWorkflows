@@ -1,5 +1,7 @@
 # GUI Build Prerequisites
 
+**Status:** Checklist reflects **[Shipped]** GUI (GUI-0–7 complete). Tags: `documentation-status.md`.
+
 Checklist and **locked defaults** before implementing the desktop app. See `gui-application.md` for full UI spec.
 
 ## Ready-to-build checklist
@@ -7,7 +9,9 @@ Checklist and **locked defaults** before implementing the desktop app. See `gui-
 - [x] Desktop platform: **PySide6** (Qt 6; no browser)
 - [x] Schema sketched: `listing_favorites`, `scheduled_jobs` in `data-model.md`
 - [x] Operator workflows documented in `gui-operator-workflows.md`
-- [ ] Run `ebay-workflows init-db` after pulling models (creates new tables via `create_all`)
+- [x] Verification provenance in match detail (`listing_detail.py`, `match_widgets.py`)
+- [x] Home ongoing cards: Start (resume) / Pause / Stop for GUI jobs (`dashboard_tab.py`, `job_runner.py`)
+- [x] Run `ebay-workflows init-db` after pulling models (creates new tables via `create_all`)
 - [x] Confirm `[gui]` optional dependency approved (`pyside6`; in-app schedule tick uses `QTimer`, no APScheduler)
 - [ ] Qt runtime smoke: `python -c "from PySide6.QtWidgets import QApplication"` succeeds after install
 - [ ] Hugging Face / Tesseract available if scheduling Phase 5 headless later
@@ -21,6 +25,7 @@ Checklist and **locked defaults** before implementing the desktop app. See `gui-
 | “Promising” default | Sort `rank_value DESC`, limit 50, hybrid scores only |
 | Favourites | Star + optional note; **CASCADE** delete when listing removed; show last known scores |
 | Long jobs on schedule | **Allow:** `phase1`, `phase2`, `phase3`, `phase4`, `sync_cm`. **Discourage:** `phase5`, `phase6` (UI warning) |
+| GUI job transport | **Start** / **Pause** / **Stop** on Home cards + Workflows tab; pause **Windows only** |
 | GUI closed schedules | **Yes** — Windows Task Scheduler runs `ebay-workflows run-due-schedules` every 5 min |
 | Timezone | Store UTC; display **system local** (`datetime.now().astimezone()`) |
 | Catch-up missed runs | Default **false** (skip missed); per-schedule opt-in |

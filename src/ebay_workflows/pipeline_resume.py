@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .integrations.scryfall import sync_scryfall_bulk
-from .models import CardPrice, ImageDetection, Listing, ListingCardCandidate, ListingScore, OcrResult, ScryfallCard
+from .models import CardPrice, ImageDetection, Listing, ListingCardCandidate, ListingScore, OcrResult, ScryfallCard, WorkflowStep
 from .workflow_phase1 import run_phase1
 from .workflow_phase2 import run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
@@ -37,7 +37,12 @@ def _count(session: Session, model: Any) -> int:
     return int(session.execute(select(func.count()).select_from(model)).scalar_one())
 
 
-def _phase_completion_snapshot(session: Session) -> dict[int, bool]:
+def _phase_completion_snapshot(
+    session: Session,
+    *,
+    max_pages: int = 1,
+    page_size: int = 50,
+) -> dict[int, bool]:
     listings_count = _count(session, Listing)
     candidates_count = _count(session, ListingCardCandidate)
     prices_count = _count(session, CardPrice)
@@ -61,8 +66,21 @@ def _phase_completion_snapshot(session: Session) -> dict[int, bool]:
         ).scalar_one()
     )
 
+    phase1_complete = False
+    if listings_count > 0:
+        last_phase1 = session.execute(
+            select(WorkflowStep)
+            .where(WorkflowStep.step_name == "phase1_ingest", WorkflowStep.status == "succeeded")
+            .order_by(WorkflowStep.finished_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if last_phase1 and last_phase1.metrics_json:
+            seen = int(last_phase1.metrics_json.get("records_seen", 0))
+            expected_floor = max(1, int(max_pages * page_size * 0.25))
+            phase1_complete = seen >= expected_floor
+
     return {
-        1: listings_count > 0,
+        1: phase1_complete,
         2: candidates_count > 0,
         3: prices_count > 0 and candidates_count > 0,
         4: scores_count > 0,
@@ -79,10 +97,19 @@ def run_resumable_pipeline(
     if cfg.from_phase < 1 or cfg.to_phase > 6 or cfg.from_phase > cfg.to_phase:
         raise ValueError("Phase range must satisfy 1 <= from_phase <= to_phase <= 6.")
 
-    phase_done = _phase_completion_snapshot(session)
+    phase_done = _phase_completion_snapshot(
+        session,
+        max_pages=cfg.max_pages,
+        page_size=settings.ebay_page_size,
+    )
     summary: dict[str, Any] = {"executed": {}, "skipped": []}
 
-    for phase in range(cfg.from_phase, cfg.to_phase + 1):
+    # Production order: price join (3) after image verification (5); rank (4) after lot detection (6).
+    execution_order = (1, 2, 5, 3, 6, 4)
+
+    for phase in execution_order:
+        if phase < cfg.from_phase or phase > cfg.to_phase:
+            continue
         if cfg.resume and phase_done.get(phase, False):
             summary["skipped"].append(phase)
             continue

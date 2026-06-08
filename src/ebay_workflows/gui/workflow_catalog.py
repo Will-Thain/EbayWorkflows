@@ -74,6 +74,19 @@ WORKFLOW_JOBS: dict[str, WorkflowJobDef] = {
     ),
 }
 
+# Display order on Workflows → Run now (pipeline flow, then utilities).
+WORKFLOW_LAUNCH_ORDER: tuple[str, ...] = (
+    "phase1",
+    "phase2",
+    "phase5",
+    "phase3",
+    "phase6",
+    "phase4",
+    "sync_cm",
+    "integrity",
+    "export",
+)
+
 LONG_RUNNING_SCHEDULE_JOBS = frozenset({"phase5", "phase6"})
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,6 +22,7 @@ def publish_step_progress(
     payload["progress_current"] = current
     payload["progress_total"] = total
     payload["progress_unit"] = unit
+    payload["progress_updated_at"] = datetime.now(timezone.utc).isoformat()
     step.metrics_json = payload
     session.commit()
 

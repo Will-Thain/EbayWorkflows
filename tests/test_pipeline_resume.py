@@ -3,7 +3,9 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ebay_workflows.models import Base, Listing, ListingCardCandidate, ListingScore
+from datetime import datetime, timezone
+
+from ebay_workflows.models import Base, Listing, ListingCardCandidate, ListingScore, WorkflowRun, WorkflowStep
 from ebay_workflows.pipeline_resume import _phase_completion_snapshot
 
 
@@ -55,9 +57,24 @@ def test_phase_completion_snapshot_detects_progress() -> None:
             explanation_json={},
         )
     )
+    run = WorkflowRun(workflow_name="test", status="succeeded", input_config_json={})
+    session.add(run)
+    session.flush()
+    session.add(
+        WorkflowStep(
+            run_id=run.id,
+            step_name="phase1_ingest",
+            phase_number=1,
+            status="succeeded",
+            attempt=1,
+            metrics_json={"records_seen": 50},
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+    )
     session.commit()
 
-    snapshot = _phase_completion_snapshot(session)
+    snapshot = _phase_completion_snapshot(session, max_pages=1, page_size=50)
     assert snapshot[1] is True
     assert snapshot[2] is True
     assert snapshot[4] is True

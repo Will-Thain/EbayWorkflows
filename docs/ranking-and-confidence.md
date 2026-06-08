@@ -9,7 +9,7 @@ Provide a transparent and versioned method to rank listings by expected value (E
 Suggested baseline formula:
 
 - `listing_cost = listing_price + shipping + fees_estimate`
-- `gross_value = sum(candidate_card_market_values)`
+- `gross_value = single verified candidate Cardmarket price` **[Shipped]** (`select_pricing_candidate`); summing top-K **[Historical]**
 - `ev_raw = gross_value - listing_cost`
 
 ## Confidence Dimensions
@@ -39,6 +39,28 @@ Define:
 - `risk_score = 1.0 - confidence_score`
 - `ev_adjusted = ev_raw * confidence_score`
 
+## Image Verification and Pricing Guardrails
+
+Singles (Phase 5) and bulk lot crops (Phase 6) require **image evidence** before Cardmarket prices attach:
+
+| Evidence source | Phase 5 singles | Phase 6 lot crops | Confirmation strength |
+|-----------------|-----------------|-------------------|------------------------|
+| OCR name match | yes | via crop title OCR | **[Shipped]** supporting only; never standalone verify |
+| FAISS embedding | yes | yes | **[Shipped]** proposer + corroboration; verify requires set/collector or symbol |
+| Set + collector (zone OCR) | yes | yes | **[Shipped]** hard confirm when collector parses |
+| Set symbol template | yes | yes | **[Shipped]** strong verify path |
+| Mana colors (zone) | yes | yes | **[Shipped]** supporting / tie-breaker only |
+
+**Shipped [Shipped]:** one printing per listing for pricing/EV (`select_pricing_candidate`); strict gate in `mtg_card_recognition.evidence`; provenance on attach.
+
+**Historical [Historical]:** OR gate verified on any one signal; Phase 4 summed multiple verified top-K prices.
+
+**Future [Future]:** Hybrid weight retuning; Milo embedder; PaddleOCR zones.
+
+Bulk **listing titles** never drive pricing alone (`bulk_lot_title_requires_image_evidence`). Phase 6 uses `crop_match_allowed_for_pricing` so individual detected cards can still receive unit prices when crop evidence confirms the match.
+
+Phase 3 (price join) must run **after** Phase 5 so `pricing_eligible` reflects image verification. Pipeline scripts use order: **2 → 5 → 3 → 6 → 4**.
+
 Alternative conservative variant:
 
 - `ev_adjusted = ev_raw - risk_penalty_multiplier * risk_score`
@@ -61,6 +83,8 @@ Each score record should include an explanation payload:
 
 - selected card candidates and contributions
 - OpenCLIP similarity values and FAISS top-K details
+- `zone_evidence` payload (name/bottom OCR, set symbol score, mana colors)
+- `image_verification_source` — **`set_collector` or `set_symbol` when verified [Shipped]**; legacy values `ocr`, `embedding`, `mana_colors` **[Historical]** only
 - confidence component breakdown
 - penalties applied
 - scoring/model versions

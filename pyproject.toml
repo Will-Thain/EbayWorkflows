@@ -29,12 +29,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+recognition = []
 gui = [
   "pyside6>=6.6",
 ]
 dev = [
   "pytest",
   "ruff",
+]
+gpu = [
+  "torch-directml",
 ]
 
 [project.scripts]
@@ -44,3 +48,4 @@ ebay-workflows-run-due-schedules = "ebay_workflows.scheduler:run_due_schedules_m
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["ebay_workflows*", "mtg_card_recognition*"]

@@ -3,11 +3,13 @@ from __future__ import annotations
 import base64
 import time
 from dataclasses import dataclass
+from typing import Iterator
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..config import Settings
+from ..services.ingest_helpers import EBAY_BROWSE_MAX_OFFSET
 
 EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope"
 EBAY_API_HOSTS = {
@@ -149,14 +151,18 @@ def verify_ebay_credentials(settings: Settings) -> str:
         return _oauth_token(settings, client, limiter)
 
 
-def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[ListingRecord]:
+def iter_listing_pages(
+    settings: Settings,
+    query: str,
+    max_pages: int,
+) -> Iterator[list[ListingRecord]]:
+    """Yield one page of listing records at a time (memory-safe for large ingests)."""
     if not settings.enable_ebay_api:
-        return []
+        return
     if settings.ebay_requests_per_minute is None:
         raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
 
     limiter = RateLimiter(settings.ebay_requests_per_minute)
-    records: list[ListingRecord] = []
     page_size = settings.ebay_page_size
     offset = 0
 
@@ -170,6 +176,9 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
         }
 
         for _ in range(max_pages):
+            if offset >= EBAY_BROWSE_MAX_OFFSET:
+                break
+
             limiter.wait()
             response = _request_with_retry(
                 client,
@@ -187,14 +196,25 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
             if not items:
                 break
 
+            page_records: list[ListingRecord] = []
             for item in items:
                 record = _extract_record(item)
-                # Provider sometimes returns partial objects. Keep only usable rows.
                 if not record.external_listing_id or not record.title or not record.listing_url:
                     continue
-                records.append(record)
+                page_records.append(record)
 
+            if page_records:
+                yield page_records
+
+            total = payload.get("total")
             offset += page_size
+            if total is not None and offset >= int(total):
+                break
 
+
+def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[ListingRecord]:
+    records: list[ListingRecord] = []
+    for page in iter_listing_pages(settings, query, max_pages):
+        records.extend(page)
     return records
 

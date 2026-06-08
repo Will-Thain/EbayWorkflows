@@ -1,8 +1,10 @@
 # GUI Operator Workflows
 
+**Status:** Flows **[Shipped]**; post-consensus verify review steps below. Tags: `documentation-status.md`.
+
 ## Home dashboard
 
-Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress and a **GUI** vs **External** badge. Use **Manage workflows →** to jump to the Workflows tab for logs and start/stop.
+Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress, a **GUI** vs **External** badge, and **Start** (resume) / **Pause** / **Stop** buttons for GUI-started jobs. Use **Manage workflows →** for the full log and job picker.
 
 Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL, `.env`, and `pip install -e ".[gui]"` (PySide6) are configured.
 
@@ -15,7 +17,9 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 3. Scan the table; select rows with high **EV adj** and acceptable **confidence**.
 4. For each shortlist:
    - Review **top card** and match % in the detail pane.
-   - Check **cached image** (or note missing cache).
+   - Check **Verified by** (`set_collector` / `set_symbol`) when present — OCR/FAISS/mana alone do not verify under current gate.
+   - Expand match row for **Proof detection** / **Proof crop** when auditing a verified printing.
+   - Check **cached image** (detection overlay highlights proof region when `verification_detection_id` is set).
    - Click **Open on eBay** to verify set/condition.
 5. Press **★ Favourite** on listings to revisit.
 6. Set filter **Favourites only** to build a watchlist.
@@ -33,9 +37,13 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    ```powershell
    ./scripts/clear-ebay-env-overrides.ps1
    ebay-workflows phase2-match-title
+   ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match
    ebay-workflows phase3-join-prices
+   ebay-workflows phase6-detect-lots --use-real-detection
    ebay-workflows phase4-rank --hybrid
    ```
+   Or use `./scripts/reanalyze-matching.ps1` for full matching re-run on cached images (clears OCR/detections first).
+   Or use `./scripts/rerun-image-matching.ps1` when only re-scoring cached images.
 2. In GUI: click **Refresh** on Opportunities.
 3. Compare new top ranks vs yesterday’s favourites (notes still attached).
 
@@ -54,7 +62,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    - Catch-up missed: **off**
 2. Windows Task Scheduler: run `ebay-workflows run-due-schedules` every 5 minutes.
 3. Morning: optional second schedule or manual CLI:
-   - phase2 → phase3 → phase4 (or one schedule per phase staggered by time)
+   - phase2 → phase5 → phase3 → phase6 → phase4 (or `./scripts/run-live-pipeline.ps1`)
 4. Open GUI Opportunities to review.
 
 **Rate limits:** 20 pages × 50 listings respects ~20 eBay Browse calls per run (within 60/min).
@@ -66,18 +74,18 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 | Local time | Scheduled job | Purpose |
 |------------|---------------|---------|
 | 02:00 | `phase1` | Ingest + image download |
-| 03:30 | `phase2` + `phase3` + `phase4` | Match, price, rank (three schedules or manual chain) |
+| 03:30 | `phase2` → `phase5` → `phase3` → `phase6` → `phase4` | Match, verify, price, lot score, rank |
 
 **Mutex:** only one job runs at a time; stagger times so ingest finishes before phase2.
 
 ---
 
-## Flow E: Stop a runaway job
+## Flow E: Stop or pause a runaway job
 
-1. **Workflows** tab → see active job log (GUI-started jobs) or **External:** status with progress bar (terminal/CLI-started jobs).
-2. Click **Stop** → terminates only jobs started from the GUI; external runs must be stopped in the terminal (Ctrl+C).
-3. If DB step stuck `running`, note warning in UI; inspect **Database → Recent workflow steps**.
-4. Re-run phase after fixing env (e.g. HF network for phase 5).
+1. **Home** → ongoing workflow card, or **Workflows** tab → log panel.
+2. **Pause** (Windows, GUI jobs only) — freezes the child process; use **Start** on the Home card or **Resume** on Workflows to continue.
+3. **Stop** — terminates GUI-started jobs only; external runs must be stopped in the terminal (**Ctrl+C**).
+4. If DB step stuck `running`, inspect **Database → Recent workflow steps**; re-run the phase after fixing env.
 
 **Monitoring CLI jobs:** The Workflows tab polls `workflow_steps` every ~2s. Phases publish `progress_current` / `progress_total` on the running step so progress appears even without live log output.
 

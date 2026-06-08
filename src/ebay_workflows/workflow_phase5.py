@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,12 @@ from typing import Any
 from rapidfuzz import fuzz
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+
+from mtg_card_recognition.evidence.attach import (
+    candidates_for_region_evidence,
+    merge_verification_provenance,
+    zone_evidence_with_provenance,
+)
 
 from .config import Settings
 from .models import (
@@ -20,14 +27,22 @@ from .models import (
     WorkflowStep,
 )
 from .services.card_regions import CardRegion
-from .services.embedding_index import apply_embedding_evidence, index_exists
+from .services.embedding_index import apply_embedding_evidence, index_exists, propose_embedding_candidates
 from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
+from .services.image_evidence import apply_per_listing_verification_gates, region_zone_evidence_matches_card
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(slots=True)
+class RegionPersistResult:
+    best_title: str | None
+    detection_id: Any
+    region_path: str
 
 
 def _load_mock_ocr(path: str) -> list[dict[str, Any]]:
@@ -49,24 +64,138 @@ def _clear_card_regions(session: Session, listing_image_id: Any) -> None:
         session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
 
 
-def _update_candidate_confidence(candidate: ListingCardCandidate, ocr_title: str) -> None:
+def _update_candidate_confidence(
+    candidate: ListingCardCandidate,
+    ocr_title: str,
+    *,
+    listing_image_id: str | None = None,
+    detection_id: str | None = None,
+    region_path: str | None = None,
+) -> bool:
+    """Apply OCR from one crop to a single candidate. Returns True if updated."""
     if not candidate.scryfall_card or not candidate.scryfall_card.name:
-        return
+        return False
     similarity = fuzz.WRatio(ocr_title.lower(), candidate.scryfall_card.name.lower()) / 100.0
+    if similarity < 0.55:
+        return False
+
+    evidence = dict(candidate.evidence_json or {})
+    existing = evidence.get("ocr_verification") or {}
+    existing_sim = float(existing.get("similarity", 0.0))
+    if similarity <= existing_sim:
+        return False
+
     confidence = float(candidate.confidence_score)
     if similarity >= 0.8:
         confidence = min(1.0, confidence + 0.1)
-    elif similarity < 0.55:
-        confidence = max(0.0, confidence - 0.1)
-    candidate.confidence_score = confidence
 
-    evidence = dict(candidate.evidence_json or {})
-    evidence["ocr_verification"] = {
+    ocr_block: dict[str, Any] = {
         "ocr_title": ocr_title,
         "similarity": similarity,
         "method": "rapidfuzz_wratio",
     }
+    if listing_image_id and detection_id and region_path:
+        ocr_block["listing_image_id"] = listing_image_id
+        ocr_block["detection_id"] = detection_id
+        ocr_block["region_image_path"] = region_path
+        evidence = merge_verification_provenance(
+            evidence,
+            listing_image_id=listing_image_id,
+            detection_id=detection_id,
+            region_path=region_path,
+        )
+
+    evidence["ocr_verification"] = ocr_block
+    candidate.confidence_score = confidence
     candidate.evidence_json = evidence
+    return True
+
+
+def _attach_zone_evidence_to_candidate(
+    candidate: ListingCardCandidate,
+    fields: dict[str, tuple[str, float]],
+    zone_evidence: dict[str, Any],
+    settings: Settings,
+    *,
+    listing_image_id: str,
+    detection_id: str,
+    region_path: str,
+) -> bool:
+    """Attach zone OCR/symbol evidence only to candidates the region plausibly references."""
+    if not candidate.scryfall_card:
+        return False
+
+    if not region_zone_evidence_matches_card(
+        zone_evidence,
+        fields,
+        candidate.scryfall_card,
+        settings,
+    ):
+        return False
+
+    zone_payload = zone_evidence_with_provenance(
+        zone_evidence,
+        listing_image_id=listing_image_id,
+        detection_id=detection_id,
+        region_path=region_path,
+    )
+    evidence = merge_verification_provenance(
+        dict(candidate.evidence_json or {}),
+        listing_image_id=listing_image_id,
+        detection_id=detection_id,
+        region_path=region_path,
+    )
+    evidence["zone_evidence"] = zone_payload
+    candidate.evidence_json = evidence
+    return True
+
+
+def _apply_region_evidence_to_candidates(
+    candidates: list[ListingCardCandidate],
+    *,
+    listing_image_id: str,
+    detection_id: str,
+    region_path: str,
+    ocr_title: str | None,
+    fields: dict[str, tuple[str, float]],
+    zone_evidence: dict[str, Any] | None,
+    settings: Settings,
+) -> int:
+    """Attach OCR and zone evidence to printings tied to this crop only."""
+    if not candidates:
+        return 0
+
+    ocr_targets = candidates_for_region_evidence(
+        candidates,
+        ocr_title=ocr_title,
+        fields=fields,
+        zone_evidence=zone_evidence,
+    )
+
+    updated = 0
+    for candidate in ocr_targets:
+        if ocr_title and _update_candidate_confidence(
+            candidate,
+            ocr_title,
+            listing_image_id=listing_image_id,
+            detection_id=detection_id,
+            region_path=region_path,
+        ):
+            updated += 1
+
+    zone_targets = ocr_targets if ocr_targets else list(candidates)
+    for candidate in zone_targets:
+        if zone_evidence and _attach_zone_evidence_to_candidate(
+            candidate,
+            fields,
+            zone_evidence,
+            settings,
+            listing_image_id=listing_image_id,
+            detection_id=detection_id,
+            region_path=region_path,
+        ):
+            updated += 1
+    return updated
 
 
 def run_phase5_ocr_verification(
@@ -118,7 +247,7 @@ def run_phase5_ocr_verification(
             model_version: str,
             engine_name: str,
             engine_version: str,
-        ) -> str | None:
+        ) -> RegionPersistResult:
             nonlocal detections_created, ocr_rows_created
             detection = ImageDetection(
                 listing_image_id=listing_image.id,
@@ -134,7 +263,7 @@ def run_phase5_ocr_verification(
             session.flush()
             detections_created += 1
 
-            region_path = region.crop_path or listing_image.local_path
+            region_path = region.crop_path or listing_image.local_path or ""
             best_title: str | None = None
             for field_type, (raw_text, confidence) in fields.items():
                 session.add(
@@ -152,7 +281,30 @@ def run_phase5_ocr_verification(
                 ocr_rows_created += 1
                 if field_type == "title":
                     best_title = raw_text
-            return best_title
+            return RegionPersistResult(best_title, detection.id, region_path)
+
+        def _persist_region_shell(
+            listing_image: ListingImage,
+            region: CardRegion,
+            *,
+            model_version: str,
+        ) -> RegionPersistResult:
+            nonlocal detections_created
+            detection = ImageDetection(
+                listing_image_id=listing_image.id,
+                detection_type="card_region",
+                bbox_x=region.bbox_x,
+                bbox_y=region.bbox_y,
+                bbox_w=region.bbox_w,
+                bbox_h=region.bbox_h,
+                detection_score=region.score,
+                model_version=model_version,
+            )
+            session.add(detection)
+            session.flush()
+            detections_created += 1
+            region_path = region.crop_path or listing_image.local_path or ""
+            return RegionPersistResult(None, detection.id, region_path)
 
         def _process_mock_row(listing_image: ListingImage, row: dict[str, Any]) -> None:
             nonlocal candidates_updated
@@ -170,7 +322,7 @@ def run_phase5_ocr_verification(
                 fields["collector_number"] = (collector_number, confidence)
 
             region = CardRegion(0, 0, 1, 1, confidence, listing_image.local_path)
-            best_title = _persist_region_detection(
+            persist = _persist_region_detection(
                 listing_image,
                 region,
                 fields,
@@ -178,13 +330,19 @@ def run_phase5_ocr_verification(
                 engine_name="mock",
                 engine_version="v1",
             )
-            if best_title:
-                candidates = session.execute(
-                    select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
-                ).scalars().all()
-                for candidate in candidates:
-                    _update_candidate_confidence(candidate, best_title)
-                    candidates_updated += 1
+            candidates = session.execute(
+                select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
+            ).scalars().all()
+            candidates_updated += _apply_region_evidence_to_candidates(
+                candidates,
+                listing_image_id=str(listing_image.id),
+                detection_id=str(persist.detection_id),
+                region_path=persist.region_path,
+                ocr_title=persist.best_title,
+                fields=fields,
+                zone_evidence=None,
+                settings=settings,
+            )
 
         def _persist_analysis(listing_image: ListingImage, analysis: ImageAnalysisResult) -> None:
             nonlocal candidates_updated, embedding_updates
@@ -195,13 +353,13 @@ def run_phase5_ocr_verification(
                 select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
             ).scalars().all()
 
-            best_title: str | None = None
-            best_confidence = 0.0
             for region_analysis in analysis.regions:
                 region = region_analysis.region
                 fields = region_analysis.fields
+                zone_evidence = region_analysis.zone_evidence
+
                 if fields:
-                    title = _persist_region_detection(
+                    persist = _persist_region_detection(
                         listing_image,
                         region,
                         fields,
@@ -209,18 +367,38 @@ def run_phase5_ocr_verification(
                         engine_name=settings.ocr_engine,
                         engine_version="v2",
                     )
-                    if title:
-                        title_conf = fields.get("title", (title, 0.0))[1]
-                        if title_conf >= best_confidence:
-                            best_confidence = title_conf
-                            best_title = title
-                if region_analysis.embedding_matches:
-                    embedding_updates += apply_embedding_evidence(candidates, region_analysis.embedding_matches)
+                elif zone_evidence:
+                    persist = _persist_region_shell(
+                        listing_image,
+                        region,
+                        model_version="phase5_region_zone_v2",
+                    )
+                else:
+                    persist = None
 
-            if best_title:
-                for candidate in candidates:
-                    _update_candidate_confidence(candidate, best_title)
-                    candidates_updated += 1
+                if persist is not None:
+                    candidates_updated += _apply_region_evidence_to_candidates(
+                        candidates,
+                        listing_image_id=str(listing_image.id),
+                        detection_id=str(persist.detection_id),
+                        region_path=persist.region_path,
+                        ocr_title=persist.best_title,
+                        fields=fields,
+                        zone_evidence=zone_evidence,
+                        settings=settings,
+                    )
+
+                if region_analysis.embedding_matches:
+                    embedding_updates += propose_embedding_candidates(
+                        session,
+                        listing_image.listing_id,
+                        candidates,
+                        region_analysis.embedding_matches,
+                        settings,
+                    )
+                    embedding_updates += apply_embedding_evidence(
+                        candidates, region_analysis.embedding_matches
+                    )
 
         def _run_parallel_real_ocr(images: list[ListingImage]) -> list[ImageAnalysisResult]:
             eligible = [img for img in images if img.local_path]
@@ -265,7 +443,23 @@ def run_phase5_ocr_verification(
                 _process_mock_row(listing_image, row)
         elif use_real_ocr:
             images_skipped_no_visible_cards = 0
-            analyses = _run_parallel_real_ocr(listing_images)
+            images_skipped_already_analyzed = 0
+            eligible_images = list(listing_images)
+            if settings.phase5_skip_analyzed_images:
+                filtered: list[ListingImage] = []
+                for img in eligible_images:
+                    has_regions = session.execute(
+                        select(ImageDetection.id).where(
+                            ImageDetection.listing_image_id == img.id,
+                            ImageDetection.detection_type == "card_region",
+                        ).limit(1)
+                    ).first()
+                    if has_regions:
+                        images_skipped_already_analyzed += 1
+                        continue
+                    filtered.append(img)
+                eligible_images = filtered
+            analyses = _run_parallel_real_ocr(eligible_images)
             by_image_id = {str(img.id): img for img in listing_images}
             for analysis in analyses:
                 listing_image = by_image_id.get(analysis.listing_image_id)
@@ -278,6 +472,15 @@ def run_phase5_ocr_verification(
         else:
             raise ValueError("Provide --mock-ocr-file or enable --use-real-ocr.")
 
+        all_candidates = session.execute(select(ListingCardCandidate)).scalars().all()
+        for candidate in all_candidates:
+            if candidate.scryfall_card is None and candidate.scryfall_id:
+                session.refresh(candidate, attribute_names=["scryfall_card"])
+        candidates_verified, candidates_gated = apply_per_listing_verification_gates(
+            all_candidates,
+            settings,
+        )
+
         step.status = "succeeded"
         step.finished_at = _now()
         metrics: dict[str, Any] = {
@@ -287,9 +490,13 @@ def run_phase5_ocr_verification(
             "embedding_updates": embedding_updates,
             "embedding_enabled": embedding_enabled,
             "pipeline_max_image_workers": getattr(settings, "pipeline_max_image_workers", 4),
+            "candidates_image_verified": candidates_verified,
+            "candidates_image_gated": candidates_gated,
         }
         if use_real_ocr and not mock_ocr_file:
             metrics["images_skipped_no_visible_cards"] = images_skipped_no_visible_cards
+            if settings.phase5_skip_analyzed_images:
+                metrics["images_skipped_already_analyzed"] = images_skipped_already_analyzed
         step.metrics_json = metrics
         run.status = "succeeded"
         run.finished_at = _now()

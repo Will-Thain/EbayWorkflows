@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -101,6 +102,23 @@ def workflow_source_label(active: ActiveWorkflow, local_job_id: str | None) -> s
     if local_job_id and local_job_id == active.job_id:
         return "GUI"
     return "External"
+
+
+def workflow_control_flags(
+    *,
+    source: str,
+    runner_busy: bool,
+    runner_paused: bool,
+    matches_local_job: bool,
+) -> dict[str, bool]:
+    """Which transport controls are enabled for an ongoing workflow card."""
+    controllable = source == "GUI" and matches_local_job and runner_busy
+    pause_supported = sys.platform == "win32"
+    return {
+        "can_stop": controllable,
+        "can_pause": controllable and not runner_paused and pause_supported,
+        "can_resume": controllable and runner_paused and pause_supported,
+    }
 
 
 def fetch_recent_steps(session: Session, *, limit: int = 10) -> tuple[list[str], list[tuple[Any, ...]]]:

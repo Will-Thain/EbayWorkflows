@@ -5,7 +5,9 @@ from typing import Any
 
 from ..config import Settings
 from ..models import Listing, ListingCardCandidate
+from .currency import listing_total_cost_base
 from .ev_guardrails import cap_ev_adjusted
+from .image_evidence import is_verified_candidate, select_pricing_candidate
 
 # Versioned weights for v2_hybrid scoring.
 HYBRID_WEIGHTS_V2 = {
@@ -22,6 +24,13 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 def hybrid_confidence_components(candidate: ListingCardCandidate) -> dict[str, float]:
     evidence: dict[str, Any] = dict(candidate.evidence_json or {})
+    if not evidence.get("image_verified"):
+        return {
+            "title_match_confidence": 0.0,
+            "ocr_confidence": 0.0,
+            "embedding_match_confidence": 0.0,
+            "price_freshness_confidence": 0.0,
+        }
 
     title_match = _clamp(float(candidate.match_score))
     ocr_block = evidence.get("ocr_verification") or {}
@@ -63,7 +72,10 @@ def compute_listing_score_hybrid(
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     if not candidates:
-        listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+        if settings is None:
+            listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+        else:
+            listing_cost = listing_total_cost_base(listing, settings)
         return {
             "ev_raw": -listing_cost,
             "confidence_score": Decimal("0"),
@@ -73,41 +85,46 @@ def compute_listing_score_hybrid(
             "explanation": {"reason": "no_candidates", "scoring_version": "v2_hybrid"},
         }
 
-    top = sorted(candidates, key=lambda c: c.rank_position)[:3]
     gross_value = Decimal("0")
     confidence_total = Decimal("0")
     matched = 0
     matched_cards: list[dict] = []
 
-    for candidate in top:
-        cm = (candidate.evidence_json or {}).get("cardmarket_price")
-        if not cm:
-            continue
-        price_amount = Decimal(str(cm.get("price_amount", 0)))
-        components = hybrid_confidence_components(candidate)
-        hybrid_confidence = composite_hybrid_confidence(components)
-        candidate.confidence_score = hybrid_confidence
+    pricing_candidate = select_pricing_candidate(candidates)
+    if pricing_candidate is not None and is_verified_candidate(pricing_candidate):
+        cm = (pricing_candidate.evidence_json or {}).get("cardmarket_price")
+        if cm:
+            price_amount = Decimal(str(cm.get("price_amount", 0)))
+            components = hybrid_confidence_components(pricing_candidate)
+            hybrid_confidence = composite_hybrid_confidence(components)
+            pricing_candidate.confidence_score = hybrid_confidence
 
-        gross_value += price_amount
-        confidence_total += Decimal(str(hybrid_confidence))
-        matched += 1
-        matched_cards.append(
-            {
-                "scryfall_id": str(candidate.scryfall_id) if candidate.scryfall_id else None,
-                "price_amount": float(price_amount),
-                "hybrid_confidence": hybrid_confidence,
-                "confidence_components": components,
-            }
-        )
+            gross_value = price_amount
+            confidence_total = Decimal(str(hybrid_confidence))
+            matched = 1
+            matched_cards.append(
+                {
+                    "scryfall_id": str(pricing_candidate.scryfall_id)
+                    if pricing_candidate.scryfall_id
+                    else None,
+                    "price_amount": float(price_amount),
+                    "hybrid_confidence": hybrid_confidence,
+                    "confidence_components": components,
+                }
+            )
 
-    listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+    if settings is None:
+        listing_cost = Decimal(str(listing.price_amount)) + Decimal(str(listing.shipping_amount or 0))
+    else:
+        listing_cost = listing_total_cost_base(listing, settings)
     ev_raw = gross_value - listing_cost
     confidence_score = confidence_total / Decimal(str(max(matched, 1)))
     risk_score = Decimal("1") - confidence_score
     ev_adjusted = ev_raw * confidence_score
-    rank_value = ev_adjusted
+    # Unpriced listings must not rank above scored lots (ev_adjusted=0 sorts above negatives).
+    rank_value = ev_raw if matched == 0 else ev_adjusted
     ev_capped = False
-    if settings is not None:
+    if matched > 0 and settings is not None:
         rank_value, ev_capped = cap_ev_adjusted(ev_adjusted, listing_cost, settings)
 
     explanation: dict[str, Any] = {

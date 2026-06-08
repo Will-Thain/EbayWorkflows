@@ -17,11 +17,26 @@ from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.cardmarket_bulk import download_and_build_singles_csv
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
-from .services.embedding_index import build_faiss_index
+from .services.embedding_index import (
+    append_faiss_batch,
+    build_faiss_index,
+    build_faiss_index_all_batches,
+    count_indexable_art_cards,
+    index_exists,
+    indexed_scryfall_ids,
+)
+from .services.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
+from .services.health_checks import collect_operational_health
+from .services.match_stats import collect_match_stats
+from .services.pipeline_progress import collect_pipeline_progress
+from .services.stale_workflows import clear_stale_workflow_steps, list_running_workflow_views
+from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
+from .services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
+from .services.db_indexes import ensure_performance_indexes
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
-from .workflow_phase1 import run_phase1
+from .workflow_phase1 import retry_failed_image_downloads, run_phase1
 from .workflow_phase2 import load_cards_from_cache, run_phase2_title_match, upsert_scryfall_cards
 from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
 from .workflow_phase4 import run_phase4_ranking
@@ -99,13 +114,118 @@ def validate_env() -> None:
         "sandbox" if settings.ebay_use_sandbox else "production",
     )
     table.add_row("EBAY_REQUESTS_PER_MINUTE", str(settings.ebay_requests_per_minute or "n/a"))
+    table.add_row("EBAY_PAGE_SIZE", str(settings.ebay_page_size))
+    table.add_row("EBAY_MAX_PAGES_PER_RUN", str(settings.ebay_max_pages_per_run))
+    table.add_row(
+        "Max listings per query (cap)",
+        str(max_listings_per_query(settings, settings.ebay_max_pages_per_run)),
+    )
+    table.add_row("PHASE1_COMMIT_BATCH_SIZE", str(settings.phase1_commit_batch_size))
+    table.add_row("PHASE1_SKIP_EXISTING_LISTINGS", str(settings.phase1_skip_existing_listings))
+    table.add_row("PHASE1_REFRESH_AFTER_HOURS", str(settings.phase1_refresh_after_hours or "disabled"))
+    table.add_row("FX_GBP_TO_EUR", str(settings.fx_gbp_to_eur or "n/a"))
+    table.add_row("PHASE5_SKIP_ANALYZED_IMAGES", str(settings.phase5_skip_analyzed_images))
+    table.add_row("PIPELINE_ENFORCE_SINGLE_RUN", str(settings.pipeline_enforce_single_run))
+    faiss_ready = index_exists(settings.faiss_index_path)
+    table.add_row("FAISS_INDEX_PATH", settings.faiss_index_path)
+    table.add_row("FAISS_INDEX_READY", "yes" if faiss_ready else "no — run build-faiss-index")
+    table.add_row("FAISS_BUILD_MAX_CARDS", str(settings.faiss_build_max_cards))
+    table.add_row("FAISS_INDEX_USE_ART_ZONE", str(settings.faiss_index_use_art_zone))
+    table.add_row("FAISS_BUILD_ALL_CARDS", str(settings.faiss_build_all_cards))
     table.add_row("SCRYFALL_REQUESTS_PER_MINUTE", str(settings.scryfall_requests_per_minute))
     table.add_row("CARDMARKET_BULK_FILE_PATH", settings.cardmarket_bulk_file_path)
     table.add_row("CARDMARKET_BULK_REFRESH_HOURS", str(settings.cardmarket_bulk_refresh_hours))
     table.add_row("GLOBAL_REQUESTS_PER_MINUTE_CAP", str(settings.global_requests_per_minute_cap))
     table.add_row("ENABLE_PROVIDER_POLICY_CHECKS", str(settings.enable_provider_policy_checks))
     table.add_row("DISABLE_LIVE_API_WRITES", str(settings.disable_live_api_writes))
+    table.add_row("TORCH_DEVICE", settings.torch_device)
+    table.add_row("EMBEDDING_BATCH_SIZE", str(settings.embedding_batch_size))
+    table.add_row("PIPELINE_MAX_IMAGE_WORKERS", str(settings.pipeline_max_image_workers))
+    table.add_row("PIPELINE_MAX_DOWNLOAD_WORKERS", str(settings.pipeline_max_download_workers))
+    table.add_row("PIPELINE_MAX_TITLE_MATCH_WORKERS", str(settings.pipeline_max_title_match_workers))
+    table.add_row("TITLE_MATCH_PREFILTER_SIZE", str(settings.title_match_prefilter_size))
+    table.add_row("TITLE_MATCH_SCORE_CUTOFF", str(settings.title_match_score_cutoff))
+    table.add_row("PHASE6_USE_FAISS_CROP_MATCH", str(settings.phase6_use_faiss_crop_match))
+    table.add_row("CARD_ZONE_OCR_ENABLED", str(settings.card_zone_ocr_enabled))
+    table.add_row("CARD_ZONE_FAISS_ENABLED", str(settings.card_zone_faiss_enabled))
+    table.add_row("CARD_ZONE_ALIGN_ENABLED", str(settings.card_zone_align_enabled))
+    table.add_row("CARD_SET_SYMBOL_MATCH_ENABLED", str(settings.card_set_symbol_match_enabled))
+    table.add_row("IMAGE_EVIDENCE_MIN_FAISS_SCORE", str(settings.image_evidence_min_faiss_score))
+    table.add_row("IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE", str(settings.image_evidence_min_mana_confidence))
+    table.add_row("ALIGN_MIN_CONFIDENCE", str(settings.align_min_confidence))
+    table.add_row("VERIFY_NAME_HARD_MIN", str(settings.verify_name_hard_min))
+    table.add_row("VERIFY_NAME_STRONG_MIN", str(settings.verify_name_strong_min))
+    table.add_row("VERIFY_SYMBOL_STRONG_MIN", str(settings.verify_symbol_strong_min))
+    table.add_row("FAISS_PROPOSE_CANDIDATES", str(settings.faiss_propose_candidates))
+    table.add_row("PHASE2_SKIP_UNCHANGED_LISTINGS", str(settings.phase2_skip_unchanged_listings))
     console.print(table)
+
+    try:
+        session_factory = build_session_factory(settings)
+        with session_factory() as session:
+            health = collect_operational_health(session, settings)
+        match_stats = health.get("match_stats") or {}
+        if match_stats:
+            stats_table = Table(title="Match Statistics")
+            stats_table.add_column("Metric", style="cyan")
+            stats_table.add_column("Count", style="green", justify="right")
+            stats_table.add_row("Verified listings", str(match_stats.get("verified_listings", 0)))
+            stats_table.add_row("Pricing-eligible candidates", str(match_stats.get("pricing_eligible_candidates", 0)))
+            stats_table.add_row("Listings with rank_value > 0", str(match_stats.get("listings_with_positive_rank", 0)))
+            sources = match_stats.get("verification_source_counts") or {}
+            if sources:
+                for source, count in sorted(sources.items()):
+                    stats_table.add_row(f"  verified via {source}", str(count))
+            console.print(stats_table)
+        warn_table = Table(title="Operational Health")
+        warn_table.add_column("Check", style="cyan")
+        warn_table.add_column("Status", style="yellow")
+        warnings_added = 0
+        if health.get("faiss_index_incomplete"):
+            warnings_added += 1
+            warn_table.add_row(
+                "FAISS index",
+                f"incomplete ({health['faiss_vector_count']}/{health['faiss_build_max_cards']} vectors)",
+            )
+        if health.get("cardmarket_bulk_stale"):
+            warnings_added += 1
+            warn_table.add_row(
+                "Cardmarket bulk",
+                f"stale ({health['cardmarket_bulk_age_hours']:.1f}h old)",
+            )
+        if health.get("cardmarket_bulk_missing"):
+            warnings_added += 1
+            warn_table.add_row("Cardmarket bulk", "missing — run download-cardmarket-bulk")
+        if health.get("failed_image_downloads", 0) > 0:
+            warnings_added += 1
+            warn_table.add_row(
+                "Failed images",
+                f"{health['failed_image_downloads']} — run retry-failed-images",
+            )
+        if health.get("faiss_index_crop_mismatch"):
+            warnings_added += 1
+            warn_table.add_row(
+                "FAISS crop mode",
+                f"index={health.get('faiss_indexed_crop_mode')} vs config={health.get('faiss_index_crop_mode')} — rebuild with build-faiss-index",
+            )
+        if health.get("set_symbol_templates_missing"):
+            warnings_added += 1
+            warn_table.add_row(
+                "Set symbol templates",
+                f"low count ({health.get('set_symbol_template_count', 0)}) — run build-set-symbol-templates",
+            )
+        if health.get("verify_thresholds_invalid"):
+            warnings_added += 1
+            keys = ", ".join(health.get("invalid_threshold_keys", []))
+            warn_table.add_row(
+                "Verify thresholds",
+                f"out of range (0, 1]: {keys}",
+            )
+        if warnings_added:
+            console.print(warn_table)
+    except OperationalError:
+        console.print("[yellow]Operational health checks skipped (database unavailable).[/yellow]")
+
     console.print("[bold green]Environment validation passed.[/bold green]")
 
 
@@ -113,7 +233,11 @@ def validate_env() -> None:
 def run_workflow(
     query: str = typer.Option(..., "--query", help="Search query to execute"),
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Avoid any write operations"),
-    max_pages: int = typer.Option(1, "--max-pages", help="Max pages to fetch from provider"),
+    max_pages: int | None = typer.Option(
+        None,
+        "--max-pages",
+        help="Max pages to fetch (default: EBAY_MAX_PAGES_PER_RUN from .env)",
+    ),
     mock_input_file: str | None = typer.Option(
         None,
         "--mock-input-file",
@@ -123,6 +247,11 @@ def run_workflow(
         False,
         "--download-images/--no-download-images",
         help="Download listing images into local cache",
+    ),
+    queries_file: str | None = typer.Option(
+        None,
+        "--queries-file",
+        help="Text file with one eBay search query per line (rotates past 10k offset cap)",
     ),
 ) -> None:
     """Run Milestone 1 Phase 1 ingestion workflow."""
@@ -143,15 +272,19 @@ def run_workflow(
         console.print("No persistence executed in dry-run mode.")
         return
 
+    pages = resolve_max_pages(max_pages, settings)
+    console.print(f"Fetching up to [cyan]{pages}[/cyan] pages ({settings.ebay_page_size} items/page).")
+
     session_factory = build_session_factory(settings)
     with session_factory() as session:
         run_id = run_phase1(
             session=session,
             settings=settings,
             query=query,
-            max_pages=max_pages,
+            max_pages=pages,
             mock_input_file=mock_input_file,
             download_images=download_images,
+            queries_file=queries_file,
         )
     console.print("[bold green]Phase 1 completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
@@ -189,10 +322,52 @@ def init_db() -> None:
     engine = build_engine(settings)
     try:
         Base.metadata.create_all(engine)
+        indexes = ensure_performance_indexes(engine)
     except OperationalError as exc:
         console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
         raise typer.Exit(code=5) from exc
     console.print("[bold green]Database schema initialized.[/bold green]")
+    if indexes:
+        console.print(f"Performance indexes ensured ({len(indexes)}).")
+
+
+@app.command("ensure-db-indexes")
+def ensure_db_indexes() -> None:
+    """Create idempotent performance indexes on an existing database."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot ensure indexes:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    engine = build_engine(settings)
+    try:
+        indexes = ensure_performance_indexes(engine)
+    except OperationalError as exc:
+        console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
+        raise typer.Exit(code=5) from exc
+    console.print(f"[bold green]Performance indexes ensured ({len(indexes)}).[/bold green]")
+
+
+@app.command("retry-failed-images")
+def retry_failed_images_cmd() -> None:
+    """Re-download listing images that are failed or still pending from Phase 1."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot retry images:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        metrics = retry_failed_image_downloads(session, settings)
+
+    table = Table(title="Image Retry Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in metrics.items():
+        table.add_row(key, str(value))
+    console.print(table)
 
 
 @app.command("sync-scryfall")
@@ -211,12 +386,41 @@ def sync_scryfall() -> None:
     console.print(f"[bold green]Scryfall sync complete.[/bold green] Loaded [cyan]{count}[/cyan] cards.")
 
 
+@app.command("build-set-symbol-templates")
+def build_set_symbol_templates_cmd() -> None:
+    """Build set-symbol template images from Scryfall reference art (one per set)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot build set symbol templates:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        metrics = build_set_symbol_templates(session, settings)
+
+    table = Table(title="Set Symbol Templates")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in metrics.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    console.print(
+        f"[bold green]Templates directory:[/bold green] {set_symbol_template_dir(settings)}"
+    )
+
+
 @app.command("build-faiss-index")
 def build_faiss_index_cmd(
     max_cards: int | None = typer.Option(
         None,
         "--max-cards",
         help="Max Scryfall cards to index (defaults to FAISS_BUILD_MAX_CARDS)",
+    ),
+    append: bool = typer.Option(
+        False,
+        "--append/--replace",
+        help="Append next batch to existing index instead of replacing it",
     ),
 ) -> None:
     """Build OpenCLIP + FAISS index from Scryfall card art."""
@@ -229,7 +433,10 @@ def build_faiss_index_cmd(
     limit = max_cards if max_cards is not None else settings.faiss_build_max_cards
     session_factory = build_session_factory(settings)
     with session_factory() as session:
-        summary = build_faiss_index(session, settings, max_cards=limit)
+        if append:
+            summary = append_faiss_batch(session, settings, batch_size=limit)
+        else:
+            summary = build_faiss_index(session, settings, max_cards=limit)
 
     table = Table(title="FAISS Index Build Summary")
     table.add_column("Metric", style="cyan")
@@ -238,6 +445,54 @@ def build_faiss_index_cmd(
         table.add_row(key, str(value))
     console.print(table)
     console.print("[bold green]FAISS index build complete.[/bold green]")
+
+
+@app.command("build-faiss-index-batches")
+def build_faiss_index_batches_cmd(
+    batch_size: int | None = typer.Option(
+        None,
+        "--batch-size",
+        help="Cards per batch (defaults to FAISS_BUILD_MAX_CARDS)",
+    ),
+    max_batches: int | None = typer.Option(
+        None,
+        "--max-batches",
+        help="Stop after N batches (default: run until all indexable art is embedded)",
+    ),
+) -> None:
+    """Append FAISS batches until all Scryfall art cards are indexed."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot build FAISS batches:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    batch = batch_size if batch_size is not None else settings.faiss_build_max_cards
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        already = len(indexed_scryfall_ids(settings.faiss_index_path))
+        total = count_indexable_art_cards(session)
+        console.print(
+            f"Starting batched FAISS build: [cyan]{already}[/cyan] / [cyan]{total}[/cyan] "
+            f"vectors indexed; batch size [cyan]{batch}[/cyan]."
+        )
+        summary = build_faiss_index_all_batches(
+            session,
+            settings,
+            batch_size=batch,
+            max_batches=max_batches,
+        )
+
+    table = Table(title="FAISS Batch Build Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in summary.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    if summary.get("complete"):
+        console.print("[bold green]Full FAISS index build complete.[/bold green]")
+    else:
+        console.print("[bold yellow]Batch limit reached; index still incomplete.[/bold yellow]")
 
 
 @app.command("phase2-match-title")
@@ -474,6 +729,205 @@ def phase6_detect_lots(
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
 
 
+@app.command("clear-match-data")
+def clear_match_data(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    keep_exports: bool = typer.Option(False, "--keep-exports", help="Do not delete ranked export JSON files"),
+) -> None:
+    """Delete title/image match artifacts and scores; keep listings, images, Scryfall, and prices."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot clear match data:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        before = count_matching_artifacts(session)
+
+    table = Table(title="Match data to delete")
+    table.add_column("Table / artifact", style="cyan")
+    table.add_column("Rows / files", style="yellow")
+    for key, value in before.items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+    if sum(before.values()) == 0 and keep_exports:
+        console.print("[green]No match data found in the database.[/green]")
+        return
+
+    if not yes and not typer.confirm("Delete all match/score data listed above?", default=False):
+        console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(code=1)
+
+    with session_factory() as session:
+        report = clear_matching_artifacts(
+            session,
+            export_dir=None if keep_exports else "./data/exports",
+        )
+
+    result = Table(title="Cleared match data")
+    result.add_column("Artifact", style="cyan")
+    result.add_column("Deleted", style="green")
+    result.add_row("ocr_results", str(report.ocr_results_deleted))
+    result.add_row("image_detections", str(report.image_detections_deleted))
+    result.add_row("listing_card_candidates", str(report.listing_candidates_deleted))
+    result.add_row("listing_scores", str(report.listing_scores_deleted))
+    if not keep_exports:
+        result.add_row("ranked export files", str(report.export_files_deleted))
+    console.print(result)
+    console.print(
+        "[bold green]Match data cleared.[/bold green] "
+        "Listings and downloaded images were kept. Run [cyan]./scripts/reanalyze-matching.ps1[/cyan] next."
+    )
+
+
+@app.command("match-stats")
+def match_stats() -> None:
+    """Print verification and ranking counts from the current database."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        stats = collect_match_stats(session)
+
+    table = Table(title="Match Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    table.add_row("Listings", str(stats["total_listings"]))
+    table.add_row("Card candidates", str(stats["total_candidates"]))
+    table.add_row("Scored listings", str(stats["scored_listings"]))
+    table.add_row("Verified listings (distinct)", str(stats["verified_listings"]))
+    table.add_row("Verified candidates", str(stats["verified_candidates"]))
+    table.add_row("Pricing-eligible candidates", str(stats["pricing_eligible_candidates"]))
+    table.add_row("Listings with rank_value > 0", str(stats["listings_with_positive_rank"]))
+    console.print(table)
+
+    sources = stats.get("verification_source_counts") or {}
+    if sources:
+        src_table = Table(title="Verification sources (image_verified=true)")
+        src_table.add_column("Source", style="cyan")
+        src_table.add_column("Count", style="green", justify="right")
+        for source, count in sorted(sources.items()):
+            src_table.add_row(source, str(count))
+        console.print(src_table)
+    else:
+        console.print("[yellow]No verified candidates in database yet.[/yellow]")
+
+
+@app.command("monitor-pipeline")
+def monitor_pipeline() -> None:
+    """Print read-only pipeline table counts (listings, images, OCR, match stats)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        stats = collect_pipeline_progress(session)
+
+    table = Table(title="Pipeline Progress")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    for key, label in (
+        ("total_listings", "Listings"),
+        ("listing_images", "Listing images"),
+        ("image_detections", "Image detections"),
+        ("lot_detections", "Lot card detections"),
+        ("ocr_results", "OCR results"),
+        ("total_candidates", "Card candidates"),
+        ("verified_candidates", "Verified candidates"),
+        ("pricing_eligible_candidates", "Pricing-eligible candidates"),
+        ("scored_listings", "Scored listings"),
+        ("listings_with_positive_rank", "Listings rank_value > 0"),
+    ):
+        table.add_row(label, str(stats.get(key, 0)))
+    console.print(table)
+
+
+@app.command("list-stale-workflows")
+def list_stale_workflows() -> None:
+    """List workflow_steps stuck in running (live vs stale)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        views = list_running_workflow_views(
+            session,
+            local_job_id=None,
+            runner_busy=False,
+            lock_path=settings.pipeline_lock_path,
+        )
+
+    if not views:
+        console.print("[green]No workflow steps with status=running.[/green]")
+        return
+
+    table = Table(title="Running workflow steps")
+    table.add_column("State", style="cyan")
+    table.add_column("Job", style="cyan")
+    table.add_column("Step")
+    table.add_column("Age", justify="right")
+    table.add_column("Reason")
+    for view in views:
+        style = "red" if view.lifecycle == "stale" else "green"
+        table.add_row(
+            f"[{style}]{view.lifecycle.upper()}[/{style}]",
+            view.job_id,
+            view.step_name,
+            view.age_label,
+            view.reason,
+        )
+    console.print(table)
+
+
+@app.command("clear-stale-workflows")
+def clear_stale_workflows_cmd(
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
+) -> None:
+    """Mark stale running workflow steps as failed (unblocks pipeline mutex)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        views = list_running_workflow_views(
+            session,
+            local_job_id=None,
+            runner_busy=False,
+            lock_path=settings.pipeline_lock_path,
+        )
+        stale_ids = [view.step_id for view in views if view.can_clear]
+        if not stale_ids:
+            console.print("[green]No stale running workflows to clear.[/green]")
+            return
+        if not yes:
+            console.print(f"Would clear {len(stale_ids)} stale step(s). Re-run with --yes to apply.")
+            raise typer.Exit(code=1)
+        result = clear_stale_workflow_steps(
+            session,
+            stale_ids,
+            lock_path=settings.pipeline_lock_path,
+        )
+
+    console.print(
+        f"[bold green]Cleared {result.cleared_steps} stale workflow step(s).[/bold green]"
+    )
+
+
 @app.command("data-integrity-check")
 def data_integrity_check() -> None:
     """Run post-MVP data integrity checks for pipeline hardening."""
@@ -505,7 +959,11 @@ def data_integrity_check() -> None:
 @app.command("run-resumable-pipeline")
 def run_resumable_pipeline_cmd(
     query: str = typer.Option("mtg lot", "--query", help="Search query for phase 1 ingestion"),
-    max_pages: int = typer.Option(1, "--max-pages", help="Max pages to fetch in phase 1"),
+    max_pages: int | None = typer.Option(
+        None,
+        "--max-pages",
+        help="Max pages to fetch in phase 1 (default: EBAY_MAX_PAGES_PER_RUN)",
+    ),
     mock_input_file: str | None = typer.Option(
         None,
         "--mock-input-file",
@@ -552,9 +1010,10 @@ def run_resumable_pipeline_cmd(
         console.print(f"[bold red]Cannot start resumable pipeline:[/bold red] {exc}")
         raise typer.Exit(code=2) from exc
 
+    pages = resolve_max_pages(max_pages, settings)
     cfg = ResumablePipelineConfig(
         query=query,
-        max_pages=max_pages,
+        max_pages=pages,
         mock_input_file=mock_input_file,
         download_images=download_images,
         top_k=top_k,

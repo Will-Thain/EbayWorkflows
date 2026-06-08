@@ -1,5 +1,7 @@
 # Local Runbook
 
+**Status:** Commands and phase order **[Shipped]**. Tags: `documentation-status.md`.
+
 ## Prerequisites
 
 - PostgreSQL running locally
@@ -16,6 +18,7 @@
 3. set required environment variables from `.env.example`
 4. run DB migrations
 5. run `ebay-workflows validate-env`
+   - includes **Match Statistics** (verified listings, pricing-eligible count) when DB is up
    - if warnings mention shell overrides, run `./scripts/clear-ebay-env-overrides.ps1` (stale `EBAY_*` env vars beat `.env`)
 6. verify eBay OAuth (production keys by default):
    `ebay-workflows ebay-auth-check`
@@ -30,8 +33,12 @@
    `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
 10. sync Scryfall bulk cards into DB:
    `ebay-workflows sync-scryfall`
-10b. build OpenCLIP+FAISS art index (subset, rate-limited downloads):
-   `ebay-workflows build-faiss-index --max-cards 500`
+10b. build OpenCLIP+FAISS art index (subset; default 10k cards from `FAISS_BUILD_MAX_CARDS`):
+   `ebay-workflows build-faiss-index`
+   - progress lines emit during embedding batches
+   - `validate-env` reports FAISS_INDEX_READY
+10c. ensure performance indexes on existing DB:
+   `ebay-workflows ensure-db-indexes`
 11. run title-based matching:
    `ebay-workflows phase2-match-title --top-k 3`
 12. download full Cardmarket MTG singles price guide (official daily export):
@@ -40,23 +47,37 @@
    - set `CARDMARKET_BULK_FILE_PATH=./data/cardmarket/prices.csv`
 13. sync Cardmarket pricing:
    `ebay-workflows sync-cardmarket`
-14. run Phase 3 price join:
-   `ebay-workflows phase3-join-prices`
-15. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
-   `ebay-workflows phase4-rank --hybrid`
-15b. export ranked results (table + optional JSON):
-   `ebay-workflows export-rankings --limit 25 -o ./data/exports/ranked.json`
-16. run OCR verification (mock evidence):
+14. run OCR/image verification **before** price join (sets `image_verified` / `pricing_eligible` via strict consensus gate):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
-    or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
+    or run real OCR from cached local images (OpenCV region detect + per-crop zone OCR + embedding):
    `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
-   - crops saved under `IMAGE_CACHE_DIR/crops`
+   - crops saved under `IMAGE_CACHE_DIR/crops`; zone strips under `crops/zones`
+   - verification provenance stored in `evidence_json` (`verification_*` fields); see `data-dictionary.md`
+   - tune gate defaults via `VERIFY_NAME_HARD_MIN`, `VERIFY_NAME_STRONG_MIN`, `VERIFY_SYMBOL_STRONG_MIN` in `.env`
+   - optional: `FAISS_PROPOSE_CANDIDATES=true` (default) for FAISS top-1 proposal when absent from Phase 2
+   - optional: `ebay-workflows build-set-symbol-templates` (one-time; auto-run by pipeline scripts)
+15. run Phase 3 price join (after Phase 5 so newly verified candidates receive prices):
+   `ebay-workflows phase3-join-prices`
+16. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
+   `ebay-workflows phase4-rank --hybrid`
+16b. export ranked results (table + optional JSON):
+   `ebay-workflows export-rankings --limit 25 -o ./data/exports/ranked.json`
+   - JSON includes `image_verification_source`, `verification_detection_id`, `verification_listing_image_id` when verified
 17. image-heavy phases use parallel workers (`PIPELINE_MAX_IMAGE_WORKERS`) and skip images without visible card regions (`IMAGE_MIN_REGION_SCORE`, `IMAGE_ALLOW_FULL_FRAME_FALLBACK=false`).
 17b. Phase 1 skips listings already in DB when `PHASE1_SKIP_EXISTING_LISTINGS=true` (default).
 17c. live production pipeline (after production OAuth works):
-   `./scripts/run-live-pipeline.ps1 -MaxPages 1`
+   `./scripts/run-live-pipeline.ps1`
+   - omit `-MaxPages` to use `EBAY_MAX_PAGES_PER_RUN` from `.env` (default 20)
+   - pass `-MaxPages 5` for a smaller daily incremental run
+17d. **large-scale ingest** (full prep + up to 1,000 listings/run):
+   `./scripts/run-large-ingest.ps1 -Query "magic the gathering mtg"`
+   - see `docs/large-scale-ingest.md` for capacity limits, hardware tuning, and flags
    - requires Tesseract on PATH for meaningful OCR text; without it, OpenCV regions still run but OCR fields may be empty
+17e. **reanalyze matching only** (clear OCR/detections, re-run 2→5→3→6→4 on cached images):
+   `./scripts/reanalyze-matching.ps1`
+   - or full FAISS rebuild + reanalyze: `./scripts/rebuild-faiss-and-reanalyze.ps1`
+   - use after verification gate or `mtg_card_recognition` changes; see `card-recognition-architecture.md`
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:
@@ -65,8 +86,8 @@
    `ebay-workflows data-integrity-check`
 19. run local quality gates before push:
    `ruff check .`
-   `python -m compileall src`
-   `pytest -q`
+   `py -m compileall src`
+   `py -m pytest -q`
 20. run resumable full pipeline (skips completed phases by default):
    `ebay-workflows run-resumable-pipeline --query "mtg lot" --mock-input-file "samples/mock_listings.json" --mock-ocr-file "samples/mock_ocr_results.json" --mock-lot-file "samples/mock_lot_detections.json"`
 21. desktop GUI — **PySide6** (Opportunities + favourites; requires phase 4 scores):
@@ -99,5 +120,6 @@
 - auth failure: validate credentials and scope grants
 - repeated throttling: lower per-provider request budget and page size
 - data mismatch: inspect raw payload snapshots and schema validation errors
-- OCR/matching drift: compare against labeled regression dataset
+- OCR/matching drift: compare against labeled regression dataset; re-run `./scripts/reanalyze-matching.ps1` after gate changes
+- zero verified after Phase 5: check Tesseract on PATH, FAISS index coverage (`validate-env`), and `VERIFY_*` thresholds — see `future-pain-points.md` §6
 

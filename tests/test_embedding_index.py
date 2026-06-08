@@ -26,7 +26,8 @@ def test_apply_embedding_evidence_marks_agreement() -> None:
 
     updated = apply_embedding_evidence([candidate_match, candidate_other], matches)
 
-    assert updated == 2
+    assert updated == 1
     assert candidate_match.confidence_score > 0.7
     assert candidate_match.evidence_json["embedding_agreement"] is True
-    assert "faiss_matches" in candidate_other.evidence_json
+    assert candidate_match.evidence_json["faiss_score"] == 0.91
+    assert "faiss_matches" not in candidate_other.evidence_json

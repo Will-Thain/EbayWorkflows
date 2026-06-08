@@ -1,5 +1,7 @@
 # Integration Specifications
 
+**Status:** API contracts **[Shipped]**; CV/matching detail in `card-recognition-architecture.md`. OCR stack: Tesseract **[Shipped]**, PaddleOCR **[Future]**. Tags: `documentation-status.md`.
+
 ## eBay Integration (Phase 1)
 
 ## Goal
@@ -27,6 +29,8 @@ Retrieve MTG listings and image URLs using eBay APIs with predictable pagination
 - retry transient HTTP failures
 - record request/response metadata for traceability
 - deduplicate by stable external listing ID
+- respect eBay Browse **offset ceiling (~10,000 results per query)**; paginate with `EBAY_PAGE_SIZE` and `EBAY_MAX_PAGES_PER_RUN`
+- stop pagination when API `total` is reached or `itemSummaries` is empty
 
 ## Scryfall Integration (Phase 2)
 
@@ -87,20 +91,38 @@ Attach market pricing suitable for EV calculations.
 - do not assume API credential availability for Cardmarket pricing
 - validate schema and reject malformed bulk files before price joins
 
-## CV/OCR/Matching Components (Phases 5-6)
+## CV/OCR/Matching Components (Phases 5–6) **[Shipped]**
 
-## Recommended Libraries
+Architecture (zones, strict verification gate, artifacts, package layout): **`card-recognition-architecture.md`**.
 
-- `opencv-python` for preprocessing and card crop normalization
-- `open-clip-torch` for image embedding generation
-- `faiss-cpu`/`faiss-gpu` for nearest-neighbor candidate retrieval
-- `paddleocr` (primary) with `pytesseract` fallback
-- `rapidfuzz` for deterministic title/set reconciliation
+Recognition logic lives in **`src/mtg_card_recognition/`** (extractable library). eBay wiring uses thin shims under `src/ebay_workflows/services/` and `adapters/recognition_settings.py`.
 
-## Functional Requirements
+### Verification policy **[Shipped]**
 
-- persist embedding model version and FAISS index version per match
-- store OCR engine/version and field-level confidence
-- keep top-K candidate list before final disambiguation
-- support hybrid final scoring (embedding similarity + OCR + text matching)
+- **Hard verify:** bottom strip set + collector match **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** set symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`).
+- **Strong symbol verify:** set symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees.
+- OCR, FAISS, and mana **never alone** set `image_verified`.
+- At most **one verified printing per listing** for pricing/EV (`apply_per_listing_verification_gates`).
+- Provenance on attach: `verification_listing_image_id`, `verification_detection_id`, `verification_region_path`.
+
+Optional **`FAISS_PROPOSE_CANDIDATES=true`** inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches; strict gate still required for pricing.
+
+### Recommended Libraries
+
+| Library | Role | Status |
+|---------|------|--------|
+| `opencv-python` | Preprocessing, card crop, zone strips | **[Shipped]** |
+| `open-clip-torch` | Image embedding generation | **[Shipped]** |
+| `faiss-cpu` / `faiss-gpu` | Nearest-neighbor candidate retrieval | **[Shipped]** |
+| `pytesseract` / Tesseract | Zone OCR (name, bottom strip) | **[Shipped]** |
+| `paddleocr` | Alternative OCR backend | **[Future]** |
+| `rapidfuzz` | Title/set reconciliation | **[Shipped]** |
+
+### Functional Requirements **[Shipped]**
+
+- Persist embedding model version and FAISS index version per match.
+- Store OCR engine/version and field-level confidence in `ocr_results` / `evidence_json`.
+- Keep top-K candidate list before final disambiguation (Phase 2 + optional FAISS proposal).
+- Hybrid final scoring (embedding + OCR + text + price freshness) with `select_pricing_candidate` for singles EV.
+- Phase 3 price join runs **after** Phase 5 so newly verified candidates receive Cardmarket prices.
 
