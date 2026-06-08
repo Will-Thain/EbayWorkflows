@@ -29,8 +29,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e . --no-deps
           pip install \
-            alembic httpx psycopg[binary] pydantic pydantic-settings pytest rapidfuzz rich \
-            ruff sqlalchemy structlog tenacity typer
+            alembic faiss-cpu httpx numpy opencv-python-headless psycopg[binary] \
+            pydantic pydantic-settings pytest rapidfuzz rich ruff sqlalchemy structlog \
+            tenacity typer
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install open-clip-torch
 
       - name: Ruff
         run: ruff check .
