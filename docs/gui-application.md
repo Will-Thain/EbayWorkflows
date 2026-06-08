@@ -1,12 +1,12 @@
 # Desktop GUI Application (Specification)
 
-**Status:** GUI-0 through GUI-7 **[Shipped]** (PySide6). Verification provenance display **[Shipped]**. Tags: `documentation-status.md`.
+**Status:** GUI-0 through GUI-7 **[Shipped]** (PySide6). Verification provenance **[Shipped]**. Workflow Start/Pause/Stop on Home + Workflows **[Shipped]** (pause Windows-only). Tags: `documentation-status.md`.
 
 ## Purpose
 
 A **local desktop application** (native window, no browser) that lets one operator:
 
-1. **Start and stop** workflow phases (CLI jobs running as child processes).
+1. **Start, pause, and stop** workflow phases (CLI jobs running as child processes).
 2. **Monitor progress** of those background jobs in near real time.
 3. **View and query** PostgreSQL data safely.
 4. **Preview** the most promising ranked matches with listing images and match context.
@@ -25,8 +25,9 @@ The desktop app is built with **[PySide6](https://doc.qt.io/qtforpython/)** — 
 | Rankings table | `QTableView` + `QAbstractTableModel` (sortable columns, row selection) |
 | Split detail / image | `QSplitter` (list left, detail + `QLabel` / `QScrollArea` right) |
 | Workflow log | `QPlainTextEdit` (read-only), fed by signals from worker thread |
-| Child CLI jobs | **`QProcess`** (preferred) or `subprocess.Popen` on a `QThread` |
-| Stop job | `QProcess.terminate()` → `kill()` after timeout |
+| Child CLI jobs | **`QProcess`** via `JobRunner` |
+| Pause job | Windows: `NtSuspendProcess` / `NtResumeProcess` on child PID **[Shipped]** |
+| Stop job | `QProcess.terminate()` → `kill()` after timeout; resumes first if paused |
 | DB polling | `QTimer` every 2–5 s → query `workflow_steps` → update status bar |
 | Images | `QPixmap` / `QImage.fromFile` (Qt built-in; **Pillow not required**) |
 | Favourite star | `QToolButton` or toggle in toolbar |
@@ -51,7 +52,7 @@ Entry module: **`gui/qt_app.py`**. Shared logic (`favorites.py`, `presenters.py`
 | Goal | Tab / area | Primary data source |
 |------|------------|---------------------|
 | Pipeline overview & ongoing runs | **Home** (dashboard) | Counts from `listings`, `listing_scores`, `listing_favorites`, `listing_images`; all `workflow_steps` with `status = 'running'` |
-| Start / stop workflows | **Workflows** | Child `ebay-workflows` processes; optional `workflow_runs` / `workflow_steps` rows written by CLI |
+| Start / pause / stop workflows | **Home** (ongoing cards) + **Workflows → Run now** | `JobRunner.start` / `pause` / `resume` / `stop` on GUI-spawned `QProcess` |
 | Monitor progress | **Home** + **Workflows** | Poll `workflow_steps` where `status = 'running'`; Workflows tab also tails subprocess stdout |
 | View / query database | **Database** | SQLAlchemy read-only sessions; curated queries + optional read-only SQL |
 | Preview best matches | **Opportunities** | `fetch_ranked_listings`; `listing_images.local_path`; `listing_card_candidates` + `evidence_json` |
@@ -75,7 +76,34 @@ Entry module: **`gui/qt_app.py`**. Shared logic (`favorites.py`, `presenters.py`
 
 ---
 
-## Tab 1: Workflows (start, stop, monitor)
+## Tab 0: Home (dashboard)
+
+### Pipeline summary
+
+Stat cards: listings, ranked, favourites, images cached, running count. Refreshed every 2 s.
+
+### Ongoing workflows **[Shipped]**
+
+Each row in `workflow_steps` with `status = 'running'` renders an **OngoingWorkflowCard** (`dashboard_tab.py`):
+
+| Element | Behavior |
+|---------|----------|
+| Title | Workflow catalog label (e.g. “OCR + embeddings”) |
+| Badge | **GUI** when `JobRunner` owns the matching job id; **External** otherwise |
+| Progress | From `workflow_steps.metrics_json` or stdout `ebay-workflows-progress` poll |
+| **Start** | **Resume** a paused GUI job (`JobRunner.resume`); disabled while running or for external jobs |
+| **Pause** | Suspend GUI child process (**Windows only**); disabled when external or already paused |
+| **Stop** | Terminate GUI child process; disabled for external jobs |
+
+External workflows (terminal, Task Scheduler): transport buttons disabled — tooltip says use **Ctrl+C** in the terminal.
+
+Control enablement: `workflow_monitor.workflow_control_flags()` (tested in `tests/test_workflow_monitor.py`).
+
+**Manage workflows →** switches to the Workflows tab for full log tail and job parameters.
+
+---
+
+## Tab 1: Workflows (start, pause, stop, monitor)
 
 ### Workflow catalog
 
@@ -101,8 +129,27 @@ Each job opens a **parameter dialog** before start (query, `max_pages`, flags). 
 2. GUI builds argv: `["ebay-workflows", ...]` with `cwd` = project root (or install root).
 3. **`JobRunner`** spawns `Popen` with `stdout=PIPE`, `stderr=STDOUT`, text mode, `bufsize=1`.
 4. `QProcess.readyReadStandardOutput` (or a `QThread` reader) appends lines to a **log view** (`QPlainTextEdit`) via Qt signals (never block the GUI thread on I/O).
-5. Disable **Start** for conflicting jobs (only one heavy job at a time by default).
+5. Disable **Start** while a job is running; enable **Pause** / **Stop** for GUI jobs.
 6. Set `EBAY_*` / `.env` via existing `Settings` (child inherits environment).
+
+### Run now transport bar **[Shipped]**
+
+| Button | When enabled | Action |
+|--------|----------------|--------|
+| **Start** | Idle (no GUI child, no blocking external monitor) | `JobRunner.start(job_id, params)` |
+| **Pause** | GUI job running, not paused (**Windows**) | `JobRunner.pause()` — label becomes **Resume** when paused |
+| **Stop** | GUI job running | `JobRunner.stop()` — resumes first if paused, then terminate → kill |
+
+External runs detected via DB poll: **Start** / **Pause** / **Stop** disabled; status shows `External: …`.
+
+### Pause **[Shipped]** (Windows)
+
+1. **Pause** calls `NtSuspendProcess` on the child PID (`job_runner.py`).
+2. Progress polling continues; stdout may buffer until resume.
+3. **Resume** (Pause button label, or **Start** on Home card) calls `NtResumeProcess`.
+4. **Stop** while paused: auto-resume then terminate so the process can exit cleanly.
+
+**Limitation:** Pause is **not** supported on Linux/macOS (buttons disabled). Phase 5/6 do not checkpoint mid-image — pause freezes the process mid-batch.
 
 ### Stop
 
@@ -181,7 +228,7 @@ In-app: **`APScheduler`** (or stdlib-only timer for interval-only MVP) in a back
 
 ```text
 src/ebay_workflows/gui/
-  job_runner.py         # JobRunner, JobState, start/stop, log queue
+  job_runner.py         # JobRunner: start, pause, resume, stop; QProcess + log signals
   workflow_catalog.py   # job definitions → argv builders
   scheduler_service.py  # next_run_at calculation, due job dispatch
 src/ebay_workflows/
@@ -358,7 +405,7 @@ Bind nothing on the network.
 - Child processes inherit `.env`; GUI never shows API keys.
 - Image paths: `resolve()` and must be under `IMAGE_CACHE_DIR`.
 - One heavy job at a time to respect `EBAY_REQUESTS_PER_MINUTE` and `GLOBAL_REQUESTS_PER_MINUTE_CAP`.
-- Stop = process termination; warn that DB step rows may be left `running`.
+- Stop = process termination; pause = OS-level suspend (Windows); warn that DB step rows may be left `running` after kill.
 
 ---
 
@@ -383,7 +430,7 @@ Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual ru
 
 1. Native desktop window with four tabs: Home, Opportunities, Workflows, Database.
 2. Operator can **start** at least phase 2, 3, and 4 from the UI and see live log output.
-3. Operator can **stop** a running child process; UI reflects stopped state.
+3. Operator can **pause** (Windows) and **stop** a GUI-started child process; Home ongoing cards expose the same controls.
 4. While a CLI phase runs, UI shows **running** step from DB and/or log activity within 5 s poll interval.
 5. Opportunities tab lists top ranked listings and shows **image preview** for selected row when cached.
 6. Database tab runs curated queries without write access.
@@ -396,8 +443,8 @@ Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual ru
 
 ## Testing
 
-- Unit: `presenters`, `workflow_catalog.build_argv`, `db_browser` SQL guards, image path validation.
-- Manual: start phase 4 on dev DB; stop mid-run; verify Opportunities refresh after complete.
+- Unit: `presenters`, `workflow_catalog.build_argv`, `db_browser` SQL guards, `workflow_control_flags`, image path validation.
+- Manual: start phase 4 on dev DB; pause/resume (Windows); stop mid-run; verify Home ongoing card buttons match Workflows tab.
 - CI: `compileall` on `src/ebay_workflows/gui`; optional `pytest-qt` for model tests; no full GUI E2E in CI initially.
 - Qt rule: **never** call SQLAlchemy or blocking I/O on the GUI thread — use `QThread` + signals or short `QTimer` polls.
 

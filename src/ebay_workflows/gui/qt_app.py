@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 from ..config import Settings
 from ..db import build_session_factory
+from ..services.match_stats import collect_match_stats
 from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .dashboard_tab import DashboardTab
 from .job_runner import JobRunner
@@ -356,6 +357,10 @@ class WorkflowsTab(QWidget):
         self._start_btn = QPushButton("Start")
         self._start_btn.clicked.connect(self._start_job)
         buttons.addWidget(self._start_btn)
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.clicked.connect(self._toggle_pause)
+        self._pause_btn.setEnabled(False)
+        buttons.addWidget(self._pause_btn)
         self._stop_btn = QPushButton("Stop")
         self._stop_btn.clicked.connect(self._runner.stop)
         self._stop_btn.setEnabled(False)
@@ -388,6 +393,8 @@ class WorkflowsTab(QWidget):
         self._runner.log_line.connect(self._append_log)
         self._runner.job_started.connect(self._on_job_started)
         self._runner.job_finished.connect(self._on_job_finished)
+        self._runner.job_paused.connect(self._on_job_paused)
+        self._runner.job_resumed.connect(self._on_job_resumed)
 
         self._poll = QTimer(self)
         self._poll.setInterval(2000)
@@ -441,6 +448,54 @@ class WorkflowsTab(QWidget):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Start failed", str(exc))
 
+    def _toggle_pause(self) -> None:
+        try:
+            if self._runner.is_paused():
+                self._runner.resume()
+            else:
+                self._runner.pause()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Pause failed", str(exc))
+
+    def _sync_transport_buttons(self, *, local_running: bool, external: bool) -> None:
+        paused = self._runner.is_paused()
+        pause_supported = sys.platform == "win32"
+        if external:
+            self._start_btn.setEnabled(False)
+            self._pause_btn.setEnabled(False)
+            self._pause_btn.setText("Pause")
+            self._stop_btn.setEnabled(False)
+            self._stop_btn.setToolTip(
+                "This job was started outside the GUI. Stop it from the terminal (Ctrl+C)."
+            )
+            return
+
+        self._stop_btn.setToolTip("")
+        if local_running:
+            self._start_btn.setEnabled(False)
+            self._stop_btn.setEnabled(True)
+            if paused:
+                self._pause_btn.setText("Resume")
+                self._pause_btn.setEnabled(pause_supported)
+            else:
+                self._pause_btn.setText("Pause")
+                self._pause_btn.setEnabled(pause_supported)
+            if not pause_supported:
+                self._pause_btn.setToolTip("Pause is only supported on Windows.")
+        else:
+            self._start_btn.setEnabled(True)
+            self._pause_btn.setEnabled(False)
+            self._pause_btn.setText("Pause")
+            self._stop_btn.setEnabled(False)
+
+    def _on_job_paused(self, job_id: str) -> None:
+        self._phase_status.setText(f"Paused: {job_id}")
+        self._sync_transport_buttons(local_running=True, external=False)
+
+    def _on_job_resumed(self, job_id: str) -> None:
+        self._phase_status.setText(f"Running: {job_id}")
+        self._sync_transport_buttons(local_running=True, external=False)
+
     def _confirm_long_job(self, job_id: str) -> bool:
         reply = QMessageBox.warning(
             self,
@@ -453,8 +508,7 @@ class WorkflowsTab(QWidget):
 
     def _on_job_started(self, job_id: str) -> None:
         self._active_job_id = job_id
-        self._start_btn.setEnabled(False)
-        self._stop_btn.setEnabled(True)
+        self._sync_transport_buttons(local_running=True, external=False)
         self._phase_status.setText(f"Running: {job_id}")
         self._reset_progress()
         try:
@@ -471,8 +525,7 @@ class WorkflowsTab(QWidget):
 
     def _on_job_finished(self, exit_code: int, job_id: str) -> None:
         self._active_job_id = None
-        self._stop_btn.setEnabled(False)
-        self._stop_btn.setToolTip("")
+        self._sync_transport_buttons(local_running=False, external=False)
         if self._progress_snapshot and self._progress_snapshot.total > 0:
             done = self._progress_snapshot
             self._progress_bar.setRange(0, done.total)
@@ -487,7 +540,7 @@ class WorkflowsTab(QWidget):
         if job_id in ("phase4", "phase3", "phase2"):
             self._on_ranking_refresh()
         if not self._monitored_step_id:
-            self._start_btn.setEnabled(True)
+            self._sync_transport_buttons(local_running=False, external=False)
         if not self._runner.is_busy() and self._monitored_step_id is None:
             if exit_code != 0:
                 self._phase_status.setText(f"Finished {job_id} with errors (exit {exit_code})")
@@ -504,9 +557,7 @@ class WorkflowsTab(QWidget):
         self._last_external_job_id = None
         if self._runner.is_busy():
             return
-        self._start_btn.setEnabled(True)
-        self._stop_btn.setEnabled(False)
-        self._stop_btn.setToolTip("")
+        self._sync_transport_buttons(local_running=False, external=False)
         self._phase_status.setText("Idle")
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(100)
@@ -540,11 +591,7 @@ class WorkflowsTab(QWidget):
                     self._monitored_step_id = step_id
                     self._last_external_job_id = active.job_id
                     self._select_job_combo(active.job_id)
-                    self._start_btn.setEnabled(False)
-                    self._stop_btn.setEnabled(False)
-                    self._stop_btn.setToolTip(
-                        "This job was started outside the GUI. Stop it from the terminal (Ctrl+C)."
-                    )
+                    self._sync_transport_buttons(local_running=False, external=True)
                     elapsed = elapsed_label(active.step)
                     job_label = WORKFLOW_JOBS.get(active.job_id)
                     label = job_label.label if job_label else active.job_id
@@ -556,6 +603,7 @@ class WorkflowsTab(QWidget):
                         self._apply_progress(snap)
                 else:
                     self._monitored_step_id = step_id
+                    self._sync_transport_buttons(local_running=True, external=False)
                     self._phase_status.setText(
                         f"Running: {active.job_id} — {active.step_label} (phase {active.step.phase_number})"
                     )
@@ -633,6 +681,9 @@ class MainWindow(QMainWindow):
             with self._session_factory() as session:
                 stats = fetch_dashboard_stats(session)
                 parts.insert(0, f"DB: {stats.listing_count:,} listings · {stats.ranked_count:,} ranked")
+                match = collect_match_stats(session)
+                if match.get("verified_listings", 0) > 0:
+                    parts.insert(1, f"Verified: {match['verified_listings']:,}")
                 if stats.running_count:
                     running = fetch_running_workflows(session)
                     if running:
@@ -653,7 +704,8 @@ class MainWindow(QMainWindow):
             pass
         if self._job_runner.is_busy():
             job = self._job_runner.current_job_id or "job"
-            parts.append(f"GUI process: {job}")
+            state = "paused" if self._job_runner.is_paused() else "running"
+            parts.append(f"GUI process: {job} ({state})")
         self._status.setText("  |  ".join(parts))
 
 

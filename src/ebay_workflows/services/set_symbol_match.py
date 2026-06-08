@@ -19,6 +19,7 @@ from ..config import Settings
 from ..models import ScryfallCard
 from .card_align import normalize_card_image, soft_resize_card_image
 from .card_zones import _crop_normalized, detect_frame_layout, zones_for_layout
+from mtg_card_recognition.zones.layouts import layout_from_scryfall_payload
 
 
 def set_symbol_template_dir(settings: Settings) -> Path:
@@ -107,7 +108,8 @@ def build_set_symbol_templates(session: Session, settings: Settings) -> dict[str
             skipped += 1
             continue
 
-        layout = detect_frame_layout(image)
+        layout_hint = layout_from_scryfall_payload(card.raw_payload_json)
+        layout = layout_hint or detect_frame_layout(image)
         zone_map = zones_for_layout(layout)
         symbol_rect = zone_map.get("set_symbol")
         if symbol_rect is None:

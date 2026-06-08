@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ListingImage
 from .embedding_index import faiss_index_crop_mode, index_exists, indexed_scryfall_ids, load_index_meta
+from .match_stats import collect_match_stats
 
 if TYPE_CHECKING:
     from ..config import Settings
@@ -91,5 +92,11 @@ def collect_operational_health(session: Session, settings: Settings) -> dict[str
         if not 0.0 < float(value) <= 1.0:
             health["verify_thresholds_invalid"] = True
             health.setdefault("invalid_threshold_keys", []).append(key)
+
+    try:
+        match_stats = collect_match_stats(session)
+        health["match_stats"] = match_stats
+    except Exception:  # noqa: BLE001
+        pass
 
     return health

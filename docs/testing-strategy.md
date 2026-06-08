@@ -16,7 +16,7 @@
 - **integration tests** — each connector with recorded fixtures
 - **repository/migration tests** — DB schema integrity, `ensure-db-indexes`
 - **workflow orchestration tests** — checkpoint/resume, pipeline lock, Phase 6 idempotency
-- **GUI unit tests** — presenters, workflow catalog argv, db_browser guards, models_qt (no full E2E in CI)
+- **GUI unit tests** — presenters, workflow catalog argv, db_browser guards, `workflow_control_flags`, models_qt (no full E2E in CI)
 
 ## CI Automation **[Shipped]**
 

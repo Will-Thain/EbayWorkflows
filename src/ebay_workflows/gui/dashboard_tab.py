@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -25,6 +28,7 @@ from .workflow_monitor import (
     fetch_recent_steps,
     fetch_running_workflows,
     resolve_progress,
+    workflow_control_flags,
     workflow_source_label,
 )
 
@@ -49,6 +53,10 @@ class StatCard(QFrame):
 
 
 class OngoingWorkflowCard(QFrame):
+    stop_requested = Signal()
+    pause_requested = Signal()
+    resume_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -75,6 +83,25 @@ class OngoingWorkflowCard(QFrame):
         self._progress_detail = QLabel()
         layout.addWidget(self._progress_detail)
 
+        actions = QHBoxLayout()
+        self._resume_btn = QPushButton("Start")
+        self._resume_btn.setToolTip("Resume a paused GUI workflow (Start)")
+        self._resume_btn.clicked.connect(self.resume_requested.emit)
+        actions.addWidget(self._resume_btn)
+
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setToolTip("Pause the GUI workflow process (Windows)")
+        self._pause_btn.clicked.connect(self.pause_requested.emit)
+        actions.addWidget(self._pause_btn)
+
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.setToolTip("Stop the GUI workflow process")
+        self._stop_btn.clicked.connect(self.stop_requested.emit)
+        actions.addWidget(self._stop_btn)
+
+        actions.addStretch()
+        layout.addLayout(actions)
+
     def apply(
         self,
         active: ActiveWorkflow,
@@ -82,13 +109,15 @@ class OngoingWorkflowCard(QFrame):
         progress: ProgressSnapshot | None,
         *,
         elapsed: str,
+        control_flags: dict[str, bool],
     ) -> None:
         job = WORKFLOW_JOBS.get(active.job_id)
         title = job.label if job else active.job_id
         self._title.setText(title)
         self._source.setText(source)
+        paused_note = " · paused" if control_flags.get("can_resume") else ""
         self._meta.setText(
-            f"{active.step_label} · phase {active.step.phase_number} · {elapsed}"
+            f"{active.step_label} · phase {active.step.phase_number} · {elapsed}{paused_note}"
         )
 
         if progress and progress.total > 0:
@@ -101,6 +130,27 @@ class OngoingWorkflowCard(QFrame):
             self._progress.setRange(0, 0)
             self._progress.setFormat("In progress…")
             self._progress_detail.setText("Waiting for progress metrics…")
+
+        can_stop = control_flags.get("can_stop", False)
+        can_pause = control_flags.get("can_pause", False)
+        can_resume = control_flags.get("can_resume", False)
+
+        self._stop_btn.setEnabled(can_stop)
+        self._pause_btn.setEnabled(can_pause)
+        self._resume_btn.setEnabled(can_resume)
+
+        if source == "External":
+            tip = "Started outside the GUI — use the terminal (Ctrl+C) to stop."
+            self._stop_btn.setToolTip(tip)
+            self._pause_btn.setToolTip(tip)
+            self._resume_btn.setToolTip(tip)
+        elif sys.platform != "win32":
+            self._pause_btn.setToolTip("Pause is only supported on Windows.")
+            self._resume_btn.setToolTip("Resume is only supported on Windows.")
+        else:
+            self._stop_btn.setToolTip("Stop the GUI workflow process")
+            self._pause_btn.setToolTip("Pause the GUI workflow process")
+            self._resume_btn.setToolTip("Resume a paused GUI workflow")
 
 
 class DashboardTab(QWidget):
@@ -117,6 +167,7 @@ class DashboardTab(QWidget):
         super().__init__(parent)
         self._session_factory = session_factory
         self._runner = job_runner
+        self._ongoing_cards: dict[str, OngoingWorkflowCard] = {}
 
         root = QVBoxLayout(self)
         root.setSpacing(16)
@@ -194,35 +245,77 @@ class DashboardTab(QWidget):
         self._stat_images.set_value(f"{stats.images_cached:,}")
         self._stat_running.set_value(str(stats.running_count))
 
-        self._rebuild_ongoing_cards(running, local_job_id, progress_by_step)
+        self._sync_ongoing_cards(running, local_job_id, progress_by_step)
         self._recent_model.set_data(recent_headers, recent_rows)
 
-    def _rebuild_ongoing_cards(
+    def _sync_ongoing_cards(
         self,
         running: list[ActiveWorkflow],
         local_job_id: str | None,
         progress_by_step: dict[str, ProgressSnapshot | None],
     ) -> None:
-        while self._ongoing_layout.count():
-            item = self._ongoing_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        active_ids = {str(item.step.id) for item in running}
+
+        for step_id in list(self._ongoing_cards):
+            if step_id not in active_ids:
+                card = self._ongoing_cards.pop(step_id)
+                self._ongoing_layout.removeWidget(card)
+                card.deleteLater()
 
         if not running:
-            empty = QLabel("No workflows are running.")
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet("color: palette(mid); padding: 24px;")
-            self._ongoing_layout.addWidget(empty)
+            if self._ongoing_layout.count() == 0:
+                empty = QLabel("No workflows are running.")
+                empty.setObjectName("ongoing_empty")
+                empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                empty.setStyleSheet("color: palette(mid); padding: 24px;")
+                self._ongoing_layout.addWidget(empty)
             return
 
+        empty = self._ongoing_host.findChild(QLabel, "ongoing_empty")
+        if empty is not None:
+            self._ongoing_layout.removeWidget(empty)
+            empty.deleteLater()
+
         for active in running:
+            step_id = str(active.step.id)
             source = workflow_source_label(active, local_job_id)
-            card = OngoingWorkflowCard(self._ongoing_host)
+            flags = workflow_control_flags(
+                source=source,
+                runner_busy=self._runner.is_busy(),
+                runner_paused=self._runner.is_paused(),
+                matches_local_job=local_job_id == active.job_id,
+            )
+
+            card = self._ongoing_cards.get(step_id)
+            if card is None:
+                card = OngoingWorkflowCard(self._ongoing_host)
+                card.stop_requested.connect(self._request_stop)
+                card.pause_requested.connect(self._request_pause)
+                card.resume_requested.connect(self._request_resume)
+                self._ongoing_cards[step_id] = card
+                self._ongoing_layout.addWidget(card)
+
             card.apply(
                 active,
                 source,
-                progress_by_step.get(str(active.step.id)),
+                progress_by_step.get(step_id),
                 elapsed=elapsed_label(active.step),
+                control_flags=flags,
             )
-            self._ongoing_layout.addWidget(card)
+
+    def _request_stop(self) -> None:
+        if not self._runner.is_busy():
+            return
+        self._runner.stop()
+
+    def _request_pause(self) -> None:
+        try:
+            self._runner.pause()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Pause failed", str(exc))
+
+    def _request_resume(self) -> None:
+        try:
+            self._runner.resume()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Resume failed", str(exc))

@@ -161,6 +161,19 @@ def validate_env() -> None:
         session_factory = build_session_factory(settings)
         with session_factory() as session:
             health = collect_operational_health(session, settings)
+        match_stats = health.get("match_stats") or {}
+        if match_stats:
+            stats_table = Table(title="Match Statistics")
+            stats_table.add_column("Metric", style="cyan")
+            stats_table.add_column("Count", style="green", justify="right")
+            stats_table.add_row("Verified listings", str(match_stats.get("verified_listings", 0)))
+            stats_table.add_row("Pricing-eligible candidates", str(match_stats.get("pricing_eligible_candidates", 0)))
+            stats_table.add_row("Listings with rank_value > 0", str(match_stats.get("listings_with_positive_rank", 0)))
+            sources = match_stats.get("verification_source_counts") or {}
+            if sources:
+                for source, count in sorted(sources.items()):
+                    stats_table.add_row(f"  verified via {source}", str(count))
+            console.print(stats_table)
         warn_table = Table(title="Operational Health")
         warn_table.add_column("Check", style="cyan")
         warn_table.add_column("Status", style="yellow")

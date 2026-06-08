@@ -4,7 +4,7 @@
 
 ## Home dashboard
 
-Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress and a **GUI** vs **External** badge. Use **Manage workflows →** to jump to the Workflows tab for logs and start/stop.
+Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress, a **GUI** vs **External** badge, and **Start** (resume) / **Pause** / **Stop** buttons for GUI-started jobs. Use **Manage workflows →** for the full log and job picker.
 
 Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL, `.env`, and `pip install -e ".[gui]"` (PySide6) are configured.
 
@@ -80,12 +80,12 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 
 ---
 
-## Flow E: Stop a runaway job
+## Flow E: Stop or pause a runaway job
 
-1. **Workflows** tab → see active job log (GUI-started jobs) or **External:** status with progress bar (terminal/CLI-started jobs).
-2. Click **Stop** → terminates only jobs started from the GUI; external runs must be stopped in the terminal (Ctrl+C).
-3. If DB step stuck `running`, note warning in UI; inspect **Database → Recent workflow steps**.
-4. Re-run phase after fixing env (e.g. HF network for phase 5).
+1. **Home** → ongoing workflow card, or **Workflows** tab → log panel.
+2. **Pause** (Windows, GUI jobs only) — freezes the child process; use **Start** on the Home card or **Resume** on Workflows to continue.
+3. **Stop** — terminates GUI-started jobs only; external runs must be stopped in the terminal (**Ctrl+C**).
+4. If DB step stuck `running`, inspect **Database → Recent workflow steps**; re-run the phase after fixing env.
 
 **Monitoring CLI jobs:** The Workflows tab polls `workflow_steps` every ~2s. Phases publish `progress_current` / `progress_total` on the running step so progress appears even without live log output.
 
