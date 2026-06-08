@@ -1,62 +1,83 @@
-# Implementation Specification (MVP)
+# Implementation Specification
+
+**Status:** Phases 1–6 and GUI **[Shipped]** on branch `feature/card-recognition-package`. Tags: `documentation-status.md`.
 
 ## Objective
 
-Translate the roadmap into a concrete implementation order that yields a runnable CLI quickly while enforcing API safety, rate-limit controls, and permission boundaries.
+Concrete module layout and build order for the local CLI + PostgreSQL workflow engine, including image-assisted matching and strict verification gates.
 
-## MVP Scope
+## Delivered Scope
 
-- local CLI workflow runner
-- PostgreSQL-backed persistence
-- Phase 1 ingestion (eBay search + listing/image persistence + image cache download)
-- Phase 2 title/OCR-assisted candidate matching baseline
-- Phase 3 pricing join baseline
-- Phase 4 initial EV and confidence ranking output
+- local CLI workflow runner (`ebay-workflows`)
+- PostgreSQL-backed persistence with workflow run/step traceability
+- Phase 1: eBay ingest + image cache
+- Phase 2: Scryfall title matching (top-K candidates)
+- Phase 3: Cardmarket bulk price join
+- Phase 4: hybrid EV/confidence ranking + export
+- Phase 5: zone OCR, embeddings, strict verification gate, provenance attach
+- Phase 6: bulk-lot multi-card detection and lot scoring
+- Desktop GUI (PySide6): Opportunities, Workflows, Database, Home, Schedules
+- Extractable recognition library: `mtg_card_recognition`
 
-## Module Layout (Proposed)
+## Module Layout (actual)
 
-- `src/cli/` command handlers and output formatters
-- `src/config/` env parsing, validation, and defaults
-- `src/workflows/` run coordinator and phase executor contracts
-- `src/integrations/` provider clients (`ebay`, `scryfall`, `cardmarket`)
-- `src/image/` preprocessing, download, OCR orchestration
-- `src/matching/` RapidFuzz and embedding candidate logic
-- `src/scoring/` EV/confidence/ranking calculators
-- `src/db/` migrations and repositories
-- `src/common/` logging, errors, utility helpers
+```text
+src/
+  mtg_card_recognition/          # Card recognition library (zones, OCR, embeddings, evidence gate)
+    config.py                    # RecognitionSettings
+    evidence/                    # gate, selection, attach
+    zones/                       # align, layouts, symbol, mana, regions
+    ocr/, embeddings/, catalog/, title/, pipeline/
+  ebay_workflows/
+    cli.py                       # Command handlers
+    config.py                    # Settings (env parsing)
+    workflow_phase{1..6}.py      # Phase executors
+    pipeline_resume.py           # Resumable pipeline
+    adapters/recognition_settings.py  # Settings → RecognitionSettings
+    integrations/                # ebay, scryfall, cardmarket, cardmarket_bulk
+    services/                    # Shims + eBay-specific (ranked_export, ev_guardrails, …)
+    gui/                         # PySide6 desktop app
+    scheduler.py                 # Headless due-job dispatch
+    models.py, db.py
+packages/mtg-card-recognition/ # Standalone package metadata (future repo split)
+tests/                         # Unit + integration tests (112+ passing)
+```
 
-## Build Order
+Legacy doc references to `src/cli/`, `src/matching/`, etc. are **[Historical]** — all logic lives under `ebay_workflows` and `mtg_card_recognition`.
 
-1. bootstrap project and config system
-2. add DB migrations for run/step/listing/image tables
-3. implement workflow runner skeleton with step checkpoints
-4. implement eBay connector with safe pagination and retries
-5. implement image downloader/cache with dedupe and retry
-6. add Scryfall dataset sync and title matcher
-7. add Cardmarket bulk-file pricing join adapter
-8. implement scoring and ranking output command
+## Build Order (as implemented)
 
-## API Safety Requirements (Mandatory)
+1. Bootstrap project, config, DB models, workflow runner skeleton
+2. eBay connector + image cache + Phase 1
+3. Scryfall sync + Phase 2 title match
+4. Cardmarket bulk download/sync + Phase 3
+5. OpenCLIP + FAISS index build; Phase 5 zone pipeline + verification gate
+6. Phase 4 hybrid scoring + guardrails + ranked export
+7. Phase 6 bulk lot detection + lot scoring
+8. Extract `mtg_card_recognition`; wire shims and P0 verification fixes
+9. GUI (Opportunities → Database → Workflows → Schedules)
+10. Operational scripts (`run-live-pipeline.ps1`, `reanalyze-matching.ps1`, large ingest)
 
-- all provider requests must pass through a shared rate-limit guard
-- retries must respect provider policy and include exponential backoff + jitter
-- no endpoint should be queried without explicit permission in provider terms
-- no scraping of restricted endpoints; use official APIs and allowed datasets only
-- per-provider request logs must capture endpoint, status, remaining budget fields when available
-- for Cardmarket, use permitted downloadable bulk files and validate file provenance/checksum
+Production phase order in scripts: **Phase 2 → 5 → 3 → 6 → 4** (price join after image verification).
 
-## Permission and Compliance Guardrails
+## API Safety Requirements (Mandatory) **[Shipped]**
 
-- keep provider credentials in environment variables only
-- assign least-privilege API scopes; do not request unused scopes
-- block startup if required live-API credentials/scopes are missing or invalid
-- store terms/policy references in connector docs and code comments where needed
-- expose a `--dry-run` mode for integration validation without full ingest volume
+- all provider requests pass through shared rate-limit guard
+- retries respect provider policy with exponential backoff + jitter
+- no endpoint queried without explicit permission in provider terms
+- Cardmarket uses permitted downloadable bulk files with checksum/source metadata
+- `validate-env` and `ebay-auth-check` for startup health
 
-## Definition of Done (MVP)
+## Definition of Done
 
-- single CLI command runs phases 1-4 against configured query
-- run status and errors are persisted and resumable
-- output includes ranked listings with explainable EV/confidence components
-- API calls remain within configured limits and compliance controls
+- CLI runs phases 1–6 against configured query with resumable checkpoints
+- run status and errors persisted; partial reruns safe
+- ranked output with explainable EV/confidence and verification provenance
+- API calls within configured limits; pipeline single-run lock optional
+- GUI previews matches with verification source and proof detection highlight
 
+## Related docs
+
+- `card-recognition-architecture.md` — verification spec and package boundaries
+- `workflow-phases.md` — per-phase acceptance criteria
+- `gui-application.md` — desktop app spec (implemented)

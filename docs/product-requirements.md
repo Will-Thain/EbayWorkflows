@@ -1,5 +1,7 @@
 # Product Requirements
 
+**Status:** Core scope **[Shipped]**; labeled regression dataset and condition-aware pricing **[Future]**. Tags: `documentation-status.md`.
+
 ## Problem Statement
 
 MTG buyers and resellers need a repeatable way to evaluate eBay listings (single-card and bulk lots) against market prices. Manual review is slow and inconsistent, especially when listing titles are noisy and images are low quality.
@@ -26,6 +28,8 @@ Build a local CLI + PostgreSQL workflow engine that:
 - Produces ranked output with transparent EV and confidence calculations.
 - Supports both single-card listings and bulk-lot listings.
 - Can reprocess historical listings as OCR or matching improves.
+- Image verification uses a **strict consensus gate** (set+collector + name/symbol); at most one verified printing per listing drives pricing/EV.
+- Verification **provenance** (image, detection, crop path) is persisted and visible in GUI/export.
 
 ## Scope
 
@@ -36,7 +40,7 @@ Build a local CLI + PostgreSQL workflow engine that:
 - Local PostgreSQL persistence
 - eBay listing metadata + image URL ingestion
 - local image caching and processing pipeline
-- hybrid title/OCR/embedding-driven Scryfall matching
+- hybrid title/OCR/embedding-driven Scryfall matching via `mtg_card_recognition` library
 - Cardmarket bulk-price-file joins
 - EV and confidence scoring
 - ranking output for operator decision making

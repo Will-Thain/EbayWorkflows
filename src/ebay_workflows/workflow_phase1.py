@@ -110,15 +110,24 @@ def _download_image_batch(
 
 
 def retry_failed_image_downloads(session: Session, settings: Settings) -> dict[str, int]:
-    """Re-download listing images previously marked failed."""
-    failed_rows = session.execute(
-        select(ListingImage).where(ListingImage.download_status == "failed")
+    """Re-download listing images stuck as failed or never attempted (pending)."""
+    missing_rows = session.execute(
+        select(ListingImage).where(ListingImage.download_status.in_(("failed", "pending")))
     ).scalars().all()
-    if not failed_rows:
-        return {"images_seen": 0, "images_retried": 0, "images_succeeded": 0}
+    if not missing_rows:
+        return {
+            "images_seen": 0,
+            "images_retried": 0,
+            "images_succeeded": 0,
+            "images_failed": 0,
+            "images_pending": 0,
+        }
+
+    failed_count = sum(1 for row in missing_rows if row.download_status == "failed")
+    pending_count = sum(1 for row in missing_rows if row.download_status == "pending")
 
     pending: list[tuple[ListingImage, str]] = []
-    for row in failed_rows:
+    for row in missing_rows:
         if not row.source_url:
             continue
         row.download_status = "pending"
@@ -133,7 +142,9 @@ def retry_failed_image_downloads(session: Session, settings: Settings) -> dict[s
         session.commit()
 
     return {
-        "images_seen": len(failed_rows),
+        "images_seen": len(missing_rows),
+        "images_failed_before": failed_count,
+        "images_pending_before": pending_count,
         "images_retried": len(pending),
         "images_succeeded": succeeded,
     }

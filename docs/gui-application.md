@@ -1,5 +1,7 @@
 # Desktop GUI Application (Specification)
 
+**Status:** GUI-0 through GUI-7 **[Shipped]** (PySide6). Verification provenance display **[Shipped]**. Tags: `documentation-status.md`.
+
 ## Purpose
 
 A **local desktop application** (native window, no browser) that lets one operator:
@@ -195,6 +197,7 @@ src/ebay_workflows/
 
 - Load **`fetch_ranked_listings(session, limit=N)`** (same as CLI export).
 - **Table** columns: Rank, EV adj, Confidence, Risk, Title (truncated), Top card, Match %, Price, Favourite indicator.
+  - Export JSON (CLI `export-rankings`) also includes `image_verification_source`, `verification_detection_id`, `verification_listing_image_id` when verified.
 - Sidebar filters:
   - Min `rank_value` / EV adj
   - Min confidence
@@ -209,10 +212,12 @@ When a row is selected:
 |-------|---------|
 | **Summary** | Full title, listing cost, `ev_raw`, `ev_adjusted`, `confidence_score`, `scoring_version`, explanation snippet from `listing_scores.explanation_json` |
 | **Match** | Top 3 `listing_card_candidates`: card name, `match_score`, `source_method`, Cardmarket price from `evidence_json.cardmarket_price`, reject reasons from guardrails |
+| **Verification** | When `image_verified`: **Verified by** (`set_collector` / `set_symbol`), **Proof detection** (truncated `verification_detection_id`), **Proof crop** (`verification_region_path`); pricing exclusion reason when not eligible |
+| **Detection highlight** | Card region overlay prefers `verification_detection_id` when set; else fuzzy OCR title match |
 | **Actions** | Open eBay (`QDesktopServices.openUrl`), copy listing ID, open cache folder in Explorer |
 | **Images** | Thumbnail strip (`QListWidget` icons) + main preview (`QLabel` + scaled `QPixmap`); paths validated under `IMAGE_CACHE_DIR` |
 
-Optional: overlay OCR snippet from `evidence_json.ocr_verification` and top FAISS hit when present (read JSON only—do not load torch in GUI).
+Optional: overlay OCR snippet from `evidence_json.ocr_verification` and FAISS corroboration when present (read JSON only—do not load torch in GUI). FAISS alone does not imply verified — check **Verified by** line.
 
 ### “Most promising” default
 
@@ -403,5 +408,7 @@ Build **GUI-0 → GUI-1 → GUI-2 → GUI-5 → GUI-6** so preview and manual ru
 - `workflow-phases.md` — what each job does; labels for Workflows tab.
 - `runbook-local.md` — CLI flags mirrored in parameter dialogs.
 - `data-model.md` / `data-dictionary.md` — Database tab column help.
-- `ranking-and-confidence.md` — Opportunities tab tooltips.
+- `ranking-and-confidence.md` — Opportunities tab tooltips; strict verify gate
+- `card-recognition-architecture.md` — verification spec mirrored in match detail panel
+- `documentation-status.md` — Shipped / Historical / Future labels
 - `product-requirements.md` — hosted multi-user web UI remains out of scope; this is local desktop only.

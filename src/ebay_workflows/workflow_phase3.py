@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .integrations.cardmarket import load_cardmarket_bulk_rows
-from .models import CardPrice, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
+from .models import CardPrice, Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import apply_price_to_evidence
 
 
@@ -110,31 +110,32 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
 
     try:
         candidates = session.execute(select(ListingCardCandidate)).scalars().all()
+        listings = session.execute(select(Listing)).scalars().all()
+        listing_by_id = {listing.id: listing for listing in listings}
         prices = session.execute(select(CardPrice)).scalars().all()
         latest_by_card: dict[uuid.UUID, CardPrice] = {}
-        latest_by_name: dict[str, CardPrice] = {}
         for price in prices:
             current = latest_by_card.get(price.scryfall_id)
             if current is None or price.price_timestamp > current.price_timestamp:
                 latest_by_card[price.scryfall_id] = price
-            if price.scryfall_card and price.scryfall_card.name:
-                key = price.scryfall_card.name.lower()
-                current_name = latest_by_name.get(key)
-                if current_name is None or price.price_timestamp > current_name.price_timestamp:
-                    latest_by_name[key] = price
 
         joined = 0
+        skipped_no_scryfall_price = 0
         for candidate in candidates:
-            price = latest_by_card.get(candidate.scryfall_id) if candidate.scryfall_id else None
-            if not price and candidate.scryfall_card and candidate.scryfall_card.name:
-                price = latest_by_name.get(candidate.scryfall_card.name.lower())
+            if not candidate.scryfall_id:
+                skipped_no_scryfall_price += 1
+                continue
+            price = latest_by_card.get(candidate.scryfall_id)
             if not price:
+                skipped_no_scryfall_price += 1
                 continue
             evidence: dict[str, Any] = dict(candidate.evidence_json or {})
             if not evidence.get("pricing_eligible", True):
                 candidate.evidence_json = evidence
                 continue
             listing_title = str(evidence.get("listing_title") or "")
+            listing = listing_by_id.get(candidate.listing_id)
+            condition_text = listing.condition_text if listing else None
             card_name = candidate.scryfall_card.name if candidate.scryfall_card else ""
             if apply_price_to_evidence(
                 evidence,
@@ -143,6 +144,7 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
                 matched_card_name=card_name,
                 match_score=float(candidate.match_score),
                 settings=settings,
+                condition_text=condition_text,
             ):
                 joined += 1
             candidate.evidence_json = evidence
@@ -153,6 +155,7 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
             "candidates_seen": len(candidates),
             "prices_available": len(prices),
             "candidates_joined": joined,
+            "candidates_skipped_no_scryfall_price": skipped_no_scryfall_price,
         }
         run.status = "succeeded"
         run.finished_at = _now()

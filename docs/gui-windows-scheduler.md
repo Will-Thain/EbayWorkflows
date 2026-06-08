@@ -1,5 +1,7 @@
 # Windows Task Scheduler (headless schedules)
 
+**Status:** Headless scheduler **[Shipped]**. Tags: `documentation-status.md`.
+
 Use this when the PySide6 GUI is **closed** but you still want `scheduled_jobs` rows to run on time.
 
 ## Prerequisites

@@ -82,7 +82,7 @@ def test_fetch_ranked_listings_orders_by_rank_value() -> None:
             match_score=0.9,
             confidence_score=0.8,
             rank_position=1,
-            evidence_json={},
+                evidence_json={"image_verified": True},
         )
     )
     session.commit()

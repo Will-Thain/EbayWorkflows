@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -24,17 +24,15 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTabWidget,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
-from sqlalchemy import select
-
 from ..config import Settings
 from ..db import build_session_factory
-from ..models import ListingImage
 from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .dashboard_tab import DashboardTab
 from .job_runner import JobRunner
@@ -51,8 +49,9 @@ from .workflow_monitor import (
 from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
 from .db_browser import CURATED_QUERIES, run_curated_query
+from .listing_detail import fetch_listing_detail
+from .match_widgets import ListingDetailPanel
 from .models_qt import GenericTableModel, RankedListTableModel
-from .presenters import is_safe_cache_path
 
 
 class OpportunitiesTab(QWidget):
@@ -128,11 +127,11 @@ class OpportunitiesTab(QWidget):
         fav_form.addRow(save_note_btn)
         detail_layout.addWidget(fav_box)
 
-        self._image_label = QLabel("No image")
-        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setMinimumHeight(280)
-        self._image_label.setStyleSheet("background: palette(mid); border: 1px solid palette(midlight);")
-        detail_layout.addWidget(self._image_label, stretch=1)
+        detail_scroll = QScrollArea()
+        detail_scroll.setWidgetResizable(True)
+        self._detail_panel = ListingDetailPanel()
+        detail_scroll.setWidget(self._detail_panel)
+        detail_layout.addWidget(detail_scroll, stretch=1)
 
         splitter.addWidget(detail)
         splitter.setStretchFactor(0, 2)
@@ -160,8 +159,7 @@ class OpportunitiesTab(QWidget):
         self._selected_id = None
         self._title_label.setText("Select a listing")
         self._meta_label.setText("")
-        self._image_label.setText("No image")
-        self._image_label.setPixmap(QPixmap())
+        self._detail_panel.set_detail(None)
         self._fav_btn.setEnabled(False)
         self._open_ebay_btn.setEnabled(False)
 
@@ -204,49 +202,13 @@ class OpportunitiesTab(QWidget):
 
         with self._session_factory() as session:
             note = fav.get_note(session, self._selected_id)
-        self._note_edit.setText(note or "")
-
-        self._show_image(self._selected_id)
-
-    def _show_image(self, listing_id: uuid.UUID) -> None:
-        with self._session_factory() as session:
-            images = (
-                session.execute(
-                    select(ListingImage)
-                    .where(
-                        ListingImage.listing_id == listing_id,
-                        ListingImage.download_status == "succeeded",
-                    )
-                    .limit(5)
-                )
-                .scalars()
-                .all()
+            detail = fetch_listing_detail(
+                session,
+                self._selected_id,
+                image_cache_dir=self._settings.image_cache_dir,
             )
-
-        path = None
-        for img in images:
-            if is_safe_cache_path(img.local_path, self._settings.image_cache_dir):
-                path = img.local_path
-                break
-
-        if not path:
-            self._image_label.setPixmap(QPixmap())
-            self._image_label.setText("No cached image")
-            return
-
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            self._image_label.setPixmap(QPixmap())
-            self._image_label.setText("Could not load image")
-            return
-
-        scaled = pixmap.scaled(
-            self._image_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self._image_label.setText("")
-        self._image_label.setPixmap(scaled)
+        self._note_edit.setText(note or "")
+        self._detail_panel.set_detail(detail)
 
     def _toggle_favorite(self) -> None:
         if not self._selected_id:

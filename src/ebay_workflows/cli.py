@@ -17,10 +17,19 @@ from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.cardmarket_bulk import download_and_build_singles_csv
 from .integrations.ebay import verify_ebay_credentials
 from .integrations.scryfall import sync_scryfall_bulk
-from .services.embedding_index import build_faiss_index, index_exists
-from .services.db_indexes import ensure_performance_indexes
+from .services.embedding_index import (
+    append_faiss_batch,
+    build_faiss_index,
+    build_faiss_index_all_batches,
+    count_indexable_art_cards,
+    index_exists,
+    indexed_scryfall_ids,
+)
+from .services.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
 from .services.health_checks import collect_operational_health
+from .services.match_stats import collect_match_stats
 from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
+from .services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
@@ -118,6 +127,8 @@ def validate_env() -> None:
     table.add_row("FAISS_INDEX_PATH", settings.faiss_index_path)
     table.add_row("FAISS_INDEX_READY", "yes" if faiss_ready else "no — run build-faiss-index")
     table.add_row("FAISS_BUILD_MAX_CARDS", str(settings.faiss_build_max_cards))
+    table.add_row("FAISS_INDEX_USE_ART_ZONE", str(settings.faiss_index_use_art_zone))
+    table.add_row("FAISS_BUILD_ALL_CARDS", str(settings.faiss_build_all_cards))
     table.add_row("SCRYFALL_REQUESTS_PER_MINUTE", str(settings.scryfall_requests_per_minute))
     table.add_row("CARDMARKET_BULK_FILE_PATH", settings.cardmarket_bulk_file_path)
     table.add_row("CARDMARKET_BULK_REFRESH_HOURS", str(settings.cardmarket_bulk_refresh_hours))
@@ -130,6 +141,19 @@ def validate_env() -> None:
     table.add_row("PIPELINE_MAX_DOWNLOAD_WORKERS", str(settings.pipeline_max_download_workers))
     table.add_row("PIPELINE_MAX_TITLE_MATCH_WORKERS", str(settings.pipeline_max_title_match_workers))
     table.add_row("TITLE_MATCH_PREFILTER_SIZE", str(settings.title_match_prefilter_size))
+    table.add_row("TITLE_MATCH_SCORE_CUTOFF", str(settings.title_match_score_cutoff))
+    table.add_row("PHASE6_USE_FAISS_CROP_MATCH", str(settings.phase6_use_faiss_crop_match))
+    table.add_row("CARD_ZONE_OCR_ENABLED", str(settings.card_zone_ocr_enabled))
+    table.add_row("CARD_ZONE_FAISS_ENABLED", str(settings.card_zone_faiss_enabled))
+    table.add_row("CARD_ZONE_ALIGN_ENABLED", str(settings.card_zone_align_enabled))
+    table.add_row("CARD_SET_SYMBOL_MATCH_ENABLED", str(settings.card_set_symbol_match_enabled))
+    table.add_row("IMAGE_EVIDENCE_MIN_FAISS_SCORE", str(settings.image_evidence_min_faiss_score))
+    table.add_row("IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE", str(settings.image_evidence_min_mana_confidence))
+    table.add_row("ALIGN_MIN_CONFIDENCE", str(settings.align_min_confidence))
+    table.add_row("VERIFY_NAME_HARD_MIN", str(settings.verify_name_hard_min))
+    table.add_row("VERIFY_NAME_STRONG_MIN", str(settings.verify_name_strong_min))
+    table.add_row("VERIFY_SYMBOL_STRONG_MIN", str(settings.verify_symbol_strong_min))
+    table.add_row("FAISS_PROPOSE_CANDIDATES", str(settings.faiss_propose_candidates))
     table.add_row("PHASE2_SKIP_UNCHANGED_LISTINGS", str(settings.phase2_skip_unchanged_listings))
     console.print(table)
 
@@ -161,6 +185,25 @@ def validate_env() -> None:
             warn_table.add_row(
                 "Failed images",
                 f"{health['failed_image_downloads']} — run retry-failed-images",
+            )
+        if health.get("faiss_index_crop_mismatch"):
+            warnings_added += 1
+            warn_table.add_row(
+                "FAISS crop mode",
+                f"index={health.get('faiss_indexed_crop_mode')} vs config={health.get('faiss_index_crop_mode')} — rebuild with build-faiss-index",
+            )
+        if health.get("set_symbol_templates_missing"):
+            warnings_added += 1
+            warn_table.add_row(
+                "Set symbol templates",
+                f"low count ({health.get('set_symbol_template_count', 0)}) — run build-set-symbol-templates",
+            )
+        if health.get("verify_thresholds_invalid"):
+            warnings_added += 1
+            keys = ", ".join(health.get("invalid_threshold_keys", []))
+            warn_table.add_row(
+                "Verify thresholds",
+                f"out of range (0, 1]: {keys}",
             )
         if warnings_added:
             console.print(warn_table)
@@ -292,7 +335,7 @@ def ensure_db_indexes() -> None:
 
 @app.command("retry-failed-images")
 def retry_failed_images_cmd() -> None:
-    """Re-download listing images that previously failed in Phase 1."""
+    """Re-download listing images that are failed or still pending from Phase 1."""
     try:
         settings = Settings()
     except (ValidationError, ValueError) as exc:
@@ -327,12 +370,41 @@ def sync_scryfall() -> None:
     console.print(f"[bold green]Scryfall sync complete.[/bold green] Loaded [cyan]{count}[/cyan] cards.")
 
 
+@app.command("build-set-symbol-templates")
+def build_set_symbol_templates_cmd() -> None:
+    """Build set-symbol template images from Scryfall reference art (one per set)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot build set symbol templates:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        metrics = build_set_symbol_templates(session, settings)
+
+    table = Table(title="Set Symbol Templates")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in metrics.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    console.print(
+        f"[bold green]Templates directory:[/bold green] {set_symbol_template_dir(settings)}"
+    )
+
+
 @app.command("build-faiss-index")
 def build_faiss_index_cmd(
     max_cards: int | None = typer.Option(
         None,
         "--max-cards",
         help="Max Scryfall cards to index (defaults to FAISS_BUILD_MAX_CARDS)",
+    ),
+    append: bool = typer.Option(
+        False,
+        "--append/--replace",
+        help="Append next batch to existing index instead of replacing it",
     ),
 ) -> None:
     """Build OpenCLIP + FAISS index from Scryfall card art."""
@@ -345,7 +417,10 @@ def build_faiss_index_cmd(
     limit = max_cards if max_cards is not None else settings.faiss_build_max_cards
     session_factory = build_session_factory(settings)
     with session_factory() as session:
-        summary = build_faiss_index(session, settings, max_cards=limit)
+        if append:
+            summary = append_faiss_batch(session, settings, batch_size=limit)
+        else:
+            summary = build_faiss_index(session, settings, max_cards=limit)
 
     table = Table(title="FAISS Index Build Summary")
     table.add_column("Metric", style="cyan")
@@ -354,6 +429,54 @@ def build_faiss_index_cmd(
         table.add_row(key, str(value))
     console.print(table)
     console.print("[bold green]FAISS index build complete.[/bold green]")
+
+
+@app.command("build-faiss-index-batches")
+def build_faiss_index_batches_cmd(
+    batch_size: int | None = typer.Option(
+        None,
+        "--batch-size",
+        help="Cards per batch (defaults to FAISS_BUILD_MAX_CARDS)",
+    ),
+    max_batches: int | None = typer.Option(
+        None,
+        "--max-batches",
+        help="Stop after N batches (default: run until all indexable art is embedded)",
+    ),
+) -> None:
+    """Append FAISS batches until all Scryfall art cards are indexed."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot build FAISS batches:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    batch = batch_size if batch_size is not None else settings.faiss_build_max_cards
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        already = len(indexed_scryfall_ids(settings.faiss_index_path))
+        total = count_indexable_art_cards(session)
+        console.print(
+            f"Starting batched FAISS build: [cyan]{already}[/cyan] / [cyan]{total}[/cyan] "
+            f"vectors indexed; batch size [cyan]{batch}[/cyan]."
+        )
+        summary = build_faiss_index_all_batches(
+            session,
+            settings,
+            batch_size=batch,
+            max_batches=max_batches,
+        )
+
+    table = Table(title="FAISS Batch Build Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    for key, value in summary.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    if summary.get("complete"):
+        console.print("[bold green]Full FAISS index build complete.[/bold green]")
+    else:
+        console.print("[bold yellow]Batch limit reached; index still incomplete.[/bold yellow]")
 
 
 @app.command("phase2-match-title")
@@ -588,6 +711,96 @@ def phase6_detect_lots(
         )
     console.print("[bold green]Phase 6 bulk-lot detection completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
+
+
+@app.command("clear-match-data")
+def clear_match_data(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    keep_exports: bool = typer.Option(False, "--keep-exports", help="Do not delete ranked export JSON files"),
+) -> None:
+    """Delete title/image match artifacts and scores; keep listings, images, Scryfall, and prices."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot clear match data:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        before = count_matching_artifacts(session)
+
+    table = Table(title="Match data to delete")
+    table.add_column("Table / artifact", style="cyan")
+    table.add_column("Rows / files", style="yellow")
+    for key, value in before.items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+    if sum(before.values()) == 0 and keep_exports:
+        console.print("[green]No match data found in the database.[/green]")
+        return
+
+    if not yes and not typer.confirm("Delete all match/score data listed above?", default=False):
+        console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(code=1)
+
+    with session_factory() as session:
+        report = clear_matching_artifacts(
+            session,
+            export_dir=None if keep_exports else "./data/exports",
+        )
+
+    result = Table(title="Cleared match data")
+    result.add_column("Artifact", style="cyan")
+    result.add_column("Deleted", style="green")
+    result.add_row("ocr_results", str(report.ocr_results_deleted))
+    result.add_row("image_detections", str(report.image_detections_deleted))
+    result.add_row("listing_card_candidates", str(report.listing_candidates_deleted))
+    result.add_row("listing_scores", str(report.listing_scores_deleted))
+    if not keep_exports:
+        result.add_row("ranked export files", str(report.export_files_deleted))
+    console.print(result)
+    console.print(
+        "[bold green]Match data cleared.[/bold green] "
+        "Listings and downloaded images were kept. Run [cyan]./scripts/reanalyze-matching.ps1[/cyan] next."
+    )
+
+
+@app.command("match-stats")
+def match_stats() -> None:
+    """Print verification and ranking counts from the current database."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        stats = collect_match_stats(session)
+
+    table = Table(title="Match Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    table.add_row("Listings", str(stats["total_listings"]))
+    table.add_row("Card candidates", str(stats["total_candidates"]))
+    table.add_row("Scored listings", str(stats["scored_listings"]))
+    table.add_row("Verified listings (distinct)", str(stats["verified_listings"]))
+    table.add_row("Verified candidates", str(stats["verified_candidates"]))
+    table.add_row("Pricing-eligible candidates", str(stats["pricing_eligible_candidates"]))
+    table.add_row("Listings with rank_value > 0", str(stats["listings_with_positive_rank"]))
+    console.print(table)
+
+    sources = stats.get("verification_source_counts") or {}
+    if sources:
+        src_table = Table(title="Verification sources (image_verified=true)")
+        src_table.add_column("Source", style="cyan")
+        src_table.add_column("Count", style="green", justify="right")
+        for source, count in sorted(sources.items()):
+            src_table.add_row(source, str(count))
+        console.print(src_table)
+    else:
+        console.print("[yellow]No verified candidates in database yet.[/yellow]")
 
 
 @app.command("data-integrity-check")
