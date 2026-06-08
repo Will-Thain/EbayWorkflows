@@ -4,9 +4,15 @@ import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from rapidfuzz import fuzz, process
+
+from .card_identifiers import (
+    ParsedCardIdentifiers,
+    lookup_card_by_identifiers,
+    parse_card_identifiers,
+)
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -17,6 +23,8 @@ class CardMatchEntry:
 
     card_id: str
     name: str
+    set_code: str | None = None
+    collector_number: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +34,7 @@ class TitleMatchResult:
     card_id: str
     card_name: str
     score: float
+    match_method: str = "fuzzy_title"
 
 
 def tokenize_title(text: str) -> list[str]:
@@ -39,16 +48,25 @@ class ScryfallTitleIndex:
 
     entries: list[CardMatchEntry]
     lower_names: list[str]
+    set_codes: list[str | None]
     token_to_indices: dict[str, set[int]]
 
     @classmethod
     def from_entries(cls, entries: Sequence[CardMatchEntry]) -> ScryfallTitleIndex:
         lower_names = [entry.name.lower() for entry in entries]
+        set_codes = [
+            entry.set_code.lower() if entry.set_code else None for entry in entries
+        ]
         token_to_indices: dict[str, set[int]] = {}
         for index, name in enumerate(lower_names):
             for token in tokenize_title(name):
                 token_to_indices.setdefault(token, set()).add(index)
-        return cls(entries=list(entries), lower_names=lower_names, token_to_indices=token_to_indices)
+        return cls(
+            entries=list(entries),
+            lower_names=lower_names,
+            set_codes=set_codes,
+            token_to_indices=token_to_indices,
+        )
 
     def candidate_indices(self, title: str, *, max_candidates: int) -> list[int]:
         """Return card indices likely to match the listing title."""
@@ -95,6 +113,7 @@ def rank_title_matches(
     top_k: int,
     prefilter_size: int = 512,
     score_cutoff: float = 55.0,
+    required_set_code: str | None = None,
 ) -> list[TitleMatchResult]:
     """Rank card names against a listing title using pre-filter + RapidFuzz extract."""
     if not index.entries or top_k <= 0:
@@ -103,6 +122,12 @@ def rank_title_matches(
     candidate_indices = index.candidate_indices(title, max_candidates=max(prefilter_size, top_k * 20))
     if not candidate_indices:
         return []
+
+    if required_set_code:
+        normalized_set = required_set_code.lower()
+        filtered = [idx for idx in candidate_indices if index.set_codes[idx] == normalized_set]
+        if filtered:
+            candidate_indices = filtered
 
     indices = candidate_indices
     names = [index.lower_names[idx] for idx in indices]
@@ -133,6 +158,7 @@ def best_title_match(
     *,
     prefilter_size: int = 512,
     score_cutoff: float = 55.0,
+    required_set_code: str | None = None,
 ) -> TitleMatchResult | None:
     """Return the single best title match above the cutoff."""
     matches = rank_title_matches(
@@ -141,8 +167,41 @@ def best_title_match(
         top_k=1,
         prefilter_size=prefilter_size,
         score_cutoff=score_cutoff,
+        required_set_code=required_set_code,
     )
     return matches[0] if matches else None
+
+
+def best_card_match_for_text(
+    text: str,
+    index: ScryfallTitleIndex,
+    set_collector_index: dict[tuple[str, str], str],
+    card_by_id: dict[str, Any],
+    *,
+    prefilter_size: int,
+    score_cutoff: float,
+    extra_identifiers: ParsedCardIdentifiers | None = None,
+) -> TitleMatchResult | None:
+    """Resolve a card using set/collector identifiers first, then fuzzy title match."""
+    identifiers = extra_identifiers or parse_card_identifiers(text)
+    exact_id = lookup_card_by_identifiers(identifiers, set_collector_index)
+    if exact_id and exact_id in card_by_id:
+        card = card_by_id[exact_id]
+        return TitleMatchResult(
+            card_id=exact_id,
+            card_name=card.name if hasattr(card, "name") else str(card),
+            score=1.0,
+            match_method="set_collector",
+        )
+
+    required_set = identifiers.set_code.lower() if identifiers.set_code else None
+    return best_title_match(
+        text,
+        index,
+        prefilter_size=prefilter_size,
+        score_cutoff=score_cutoff,
+        required_set_code=required_set,
+    )
 
 
 def match_listings_parallel(
@@ -152,6 +211,9 @@ def match_listings_parallel(
     top_k: int,
     prefilter_size: int,
     max_workers: int,
+    score_cutoff: float = 55.0,
+    set_collector_index: dict[tuple[str, str], str] | None = None,
+    card_by_id: dict[str, Any] | None = None,
 ) -> dict[str, list[TitleMatchResult]]:
     """Match many listing titles in parallel; returns listing_id -> matches."""
     tasks = list(listings)
@@ -162,11 +224,43 @@ def match_listings_parallel(
 
     def _match_one(item: tuple[str, str]) -> tuple[str, list[TitleMatchResult]]:
         listing_id, title = item
+        if set_collector_index is not None and card_by_id is not None:
+            exact = best_card_match_for_text(
+                title,
+                index,
+                set_collector_index,
+                card_by_id,
+                prefilter_size=prefilter_size,
+                score_cutoff=score_cutoff,
+            )
+            parsed = parse_card_identifiers(title)
+            required_set = parsed.set_code.lower() if parsed.set_code else None
+            if exact is not None:
+                ranked = rank_title_matches(
+                    title,
+                    index,
+                    top_k=top_k,
+                    prefilter_size=prefilter_size,
+                    score_cutoff=score_cutoff,
+                    required_set_code=required_set,
+                )
+                merged: list[TitleMatchResult] = [exact]
+                for match in ranked:
+                    if match.card_id != exact.card_id:
+                        merged.append(match)
+                    if len(merged) >= top_k:
+                        break
+                return listing_id, merged[:top_k]
+
+        parsed = parse_card_identifiers(title)
+        required_set = parsed.set_code.lower() if parsed.set_code else None
         return listing_id, rank_title_matches(
             title,
             index,
             top_k=top_k,
             prefilter_size=prefilter_size,
+            score_cutoff=score_cutoff,
+            required_set_code=required_set,
         )
 
     if workers == 1:

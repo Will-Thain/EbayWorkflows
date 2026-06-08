@@ -33,9 +33,12 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    ```powershell
    ./scripts/clear-ebay-env-overrides.ps1
    ebay-workflows phase2-match-title
+   ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match
    ebay-workflows phase3-join-prices
+   ebay-workflows phase6-detect-lots --use-real-detection
    ebay-workflows phase4-rank --hybrid
    ```
+   Or use `./scripts/rerun-image-matching.ps1` when only re-scoring cached images.
 2. In GUI: click **Refresh** on Opportunities.
 3. Compare new top ranks vs yesterday’s favourites (notes still attached).
 
@@ -54,7 +57,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    - Catch-up missed: **off**
 2. Windows Task Scheduler: run `ebay-workflows run-due-schedules` every 5 minutes.
 3. Morning: optional second schedule or manual CLI:
-   - phase2 → phase3 → phase4 (or one schedule per phase staggered by time)
+   - phase2 → phase5 → phase3 → phase6 → phase4 (or `./scripts/run-live-pipeline.ps1`)
 4. Open GUI Opportunities to review.
 
 **Rate limits:** 20 pages × 50 listings respects ~20 eBay Browse calls per run (within 60/min).
@@ -66,7 +69,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 | Local time | Scheduled job | Purpose |
 |------------|---------------|---------|
 | 02:00 | `phase1` | Ingest + image download |
-| 03:30 | `phase2` + `phase3` + `phase4` | Match, price, rank (three schedules or manual chain) |
+| 03:30 | `phase2` → `phase5` → `phase3` → `phase6` → `phase4` | Match, verify, price, lot score, rank |
 
 **Mutex:** only one job runs at a time; stagger times so ingest finishes before phase2.
 

@@ -72,6 +72,8 @@ ebay-workflows build-faiss-index    # 10k cards; ~15–45 min on DirectML
 |--------|---------|
 | `scripts/run-large-ingest.ps1` | Full prep + Phase 1–6 + export; use for bulk ingest |
 | `scripts/run-live-pipeline.ps1` | Lighter daily run (assumes Scryfall/Cardmarket already synced) |
+| `scripts/reanalyze-matching.ps1` | Clear match artifacts + full Phase 2–6 re-run after logic changes |
+| `scripts/rerun-image-matching.ps1` | Re-run Phase 5/6/4 on cached images (no eBay re-ingest) |
 | `scripts/activate-dev.ps1` | Puts venv, Tesseract, psql on PATH |
 
 ### `run-large-ingest.ps1` flags
@@ -92,8 +94,9 @@ validate-env → init-db → ensure-db-indexes
 → sync-scryfall → [build-faiss-index] → sync-cardmarket
 → Phase 1 (ingest + parallel image download)
 → retry-failed-images
-→ Phase 2 (title match) → Phase 3 (price join)
-→ Phase 5 (OCR + embedding) → Phase 6 (lot detection)
+→ Phase 2 (title match) → Phase 5 (OCR + embedding + zone evidence)
+→ Phase 3 (price join — after image verification)
+→ Phase 6 (lot detection + crop pricing)
 → Phase 4 (hybrid rank — last, preserves v2_lot scores)
 → export-rankings → data-integrity-check
 ```
@@ -127,8 +130,11 @@ Existing listings are skipped when `PHASE1_SKIP_EXISTING_LISTINGS=true`. Phase 2
 | 429 / throttling | Lower `EBAY_REQUESTS_PER_MINUTE`; reduce `PIPELINE_MAX_DOWNLOAD_WORKERS` |
 | Partial Phase 1 after crash | Re-run Phase 1; batch commits preserve completed listings |
 | Failed image downloads | `ebay-workflows retry-failed-images` |
-| Rankings all 0.00 EV | Check `TITLE_MATCH_MIN_SCORE_FOR_PRICING`; lot listings need Phase 6 |
-| FAISS match weak | Increase `FAISS_BUILD_MAX_CARDS`; rebuild index |
+| Rankings all 0.00 EV | Run Phase 5 before Phase 3; bulk lots need Phase 6 crop evidence for pricing |
+| Bulk lots never priced | Ensure lot crops have set/collector or FAISS evidence; title-only blocked by design |
+| FAISS match weak after subset index | Full build: `FAISS_BUILD_ALL_CARDS=true` + `-RebuildFaiss` or `./scripts/build-faiss-full.ps1` |
+| FAISS match weak after full art-zone index | Expected with generic OpenCLIP on eBay photos — see `card-recognition-architecture.md`; evaluate Milo catalog before re-embedding |
+| FAISS crop mismatch warning | `validate-env` reports index vs config crop mode — re-embed from cached `scryfall_art/` (no Scryfall re-download) |
 | >10k results needed | Split into multiple queries; dedup handles overlap |
 
 ## Hardware notes (7950X / RX 7900 XTX)

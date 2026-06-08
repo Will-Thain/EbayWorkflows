@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..config import Settings
 from .card_regions import CardRegion
 from .embedding_index import EmbeddingMatch, index_exists, search_similar_cards
 from .image_gate import assess_visible_card_regions
 from .ocr_extract import extract_ocr_fields
+from .zone_card_signals import extract_card_zone_signals
 
 
 @dataclass(slots=True)
@@ -14,6 +16,7 @@ class RegionAnalysis:
     region: CardRegion
     fields: dict[str, tuple[str, float]]
     embedding_matches: list[EmbeddingMatch]
+    zone_evidence: dict | None = None
 
 
 @dataclass(slots=True)
@@ -50,20 +53,34 @@ def analyze_listing_image(
         )
 
     embedding_enabled = use_embedding and index_exists(settings.faiss_index_path)
+    zone_dir = str(Path(crop_dir) / "zones")
     region_results: list[RegionAnalysis] = []
     for region in gate.regions:
         crop_path = region.crop_path or local_path
-        fields = extract_ocr_fields(
-            crop_path,
-            engine=settings.ocr_engine,
-            tesseract_cmd=settings.tesseract_cmd,
-        )
+        zone_evidence: dict = {}
+        if settings.card_zone_ocr_enabled:
+            fields, _crops, zone_evidence = extract_card_zone_signals(crop_path, zone_dir, settings)
+            faiss_path = zone_evidence.get("faiss_image_path", crop_path)
+        else:
+            fields = extract_ocr_fields(
+                crop_path,
+                engine=settings.ocr_engine,
+                tesseract_cmd=settings.tesseract_cmd,
+            )
+            faiss_path = crop_path
         matches: list[EmbeddingMatch] = []
-        if embedding_enabled and crop_path:
-            matches = search_similar_cards(crop_path, settings, top_k=settings.faiss_top_k)
+        if embedding_enabled and faiss_path:
+            matches = search_similar_cards(faiss_path, settings, top_k=settings.faiss_top_k)
         if not fields and not matches:
             continue
-        region_results.append(RegionAnalysis(region=region, fields=fields, embedding_matches=matches))
+        region_results.append(
+            RegionAnalysis(
+                region=region,
+                fields=fields,
+                embedding_matches=matches,
+                zone_evidence=zone_evidence or None,
+            )
+        )
 
     if not region_results:
         return ImageAnalysisResult(

@@ -91,6 +91,8 @@ Attach market pricing suitable for EV calculations.
 
 ## CV/OCR/Matching Components (Phases 5-6)
 
+Architecture (zones, evidence gate, artifacts, external references): **`card-recognition-architecture.md`**.
+
 ## Recommended Libraries
 
 - `opencv-python` for preprocessing and card crop normalization

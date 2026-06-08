@@ -44,18 +44,19 @@
    - set `CARDMARKET_BULK_FILE_PATH=./data/cardmarket/prices.csv`
 13. sync Cardmarket pricing:
    `ebay-workflows sync-cardmarket`
-14. run Phase 3 price join:
-   `ebay-workflows phase3-join-prices`
-15. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
-   `ebay-workflows phase4-rank --hybrid`
-15b. export ranked results (table + optional JSON):
-   `ebay-workflows export-rankings --limit 25 -o ./data/exports/ranked.json`
-16. run OCR verification (mock evidence):
+14. run OCR/image verification **before** price join (sets `image_verified` / `pricing_eligible`):
    `ebay-workflows phase5-verify-ocr --mock-ocr-file "samples/mock_ocr_results.json"`
-    or run real OCR from cached local images (OpenCV region detect + per-crop OCR):
+    or run real OCR from cached local images (OpenCV region detect + per-crop zone OCR + embedding):
    `ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match`
    - requires `listing_images.local_path` populated (Phase 1 with `--download-images`)
-   - crops saved under `IMAGE_CACHE_DIR/crops`
+   - crops saved under `IMAGE_CACHE_DIR/crops`; zone strips under `crops/zones`
+   - optional: `ebay-workflows build-set-symbol-templates` (one-time; auto-run by pipeline scripts)
+15. run Phase 3 price join (after Phase 5 so newly verified candidates receive prices):
+   `ebay-workflows phase3-join-prices`
+16. run EV/confidence ranking (hybrid title+OCR+embedding+price by default):
+   `ebay-workflows phase4-rank --hybrid`
+16b. export ranked results (table + optional JSON):
+   `ebay-workflows export-rankings --limit 25 -o ./data/exports/ranked.json`
 17. image-heavy phases use parallel workers (`PIPELINE_MAX_IMAGE_WORKERS`) and skip images without visible card regions (`IMAGE_MIN_REGION_SCORE`, `IMAGE_ALLOW_FULL_FRAME_FALLBACK=false`).
 17b. Phase 1 skips listings already in DB when `PHASE1_SKIP_EXISTING_LISTINGS=true` (default).
 17c. live production pipeline (after production OAuth works):

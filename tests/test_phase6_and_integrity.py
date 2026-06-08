@@ -79,8 +79,20 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
         {
             "source_url": "https://example.com/images/card-front-2.jpg",
             "detected_cards": [
-                {"title": "Sol Ring", "quantity": 2, "confidence": 0.9},
-                {"title": "Sol Ring", "quantity": 1, "confidence": 0.8},
+                {
+                    "title": "Sol Ring",
+                    "quantity": 2,
+                    "confidence": 0.9,
+                    "set_code": "lea",
+                    "collector_number": "1",
+                },
+                {
+                    "title": "Sol Ring",
+                    "quantity": 1,
+                    "confidence": 0.8,
+                    "set_code": "lea",
+                    "collector_number": "1",
+                },
             ],
         }
     ]
@@ -97,11 +109,26 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
         tesseract_cmd=None,
         title_match_min_score_for_pricing=0.88,
         title_match_min_score_non_mtg=0.98,
+        title_match_prefilter_size=512,
+        title_match_score_cutoff=55.0,
         cardmarket_max_unit_price_eur=250.0,
         ev_max_listing_cost_multiple=10.0,
         phase6_bulk_listings_only=False,
         phase6_min_lot_detections=1,
         phase6_max_lot_ev_multiple=50.0,
+        phase6_use_faiss_crop_match=False,
+        phase6_skip_analyzed_images=False,
+        image_evidence_min_faiss_score=0.65,
+        image_evidence_min_ocr_similarity=0.65,
+        card_set_symbol_min_score=0.45,
+        faiss_index_path="./.cache/faiss/index.bin",
+        faiss_top_k=5,
+        cardmarket_condition_multiplier_nm=1.0,
+        cardmarket_condition_multiplier_lp=0.85,
+        cardmarket_condition_multiplier_mp=0.70,
+        cardmarket_condition_multiplier_hp=0.55,
+        cardmarket_condition_multiplier_dmg=0.40,
+        cardmarket_condition_multiplier_unspecified=0.95,
     )
     run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))
     run_phase6_bulk_lot_detection(session, settings, mock_lot_file=str(mock_file))
@@ -121,6 +148,8 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
     assert lot_title_ocr_count == 2
     assert score.scoring_version == "v2_lot"
     assert len(score.explanation_json["lot_items"]) == 2
+    assert score.explanation_json["lot_total_value"] > 0
+    assert score.explanation_json["lot_items"][0]["unit_price"] > 0
 
 
 def test_integrity_check_detects_missing_candidates() -> None:

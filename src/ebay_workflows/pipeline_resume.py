@@ -104,7 +104,12 @@ def run_resumable_pipeline(
     )
     summary: dict[str, Any] = {"executed": {}, "skipped": []}
 
-    for phase in range(cfg.from_phase, cfg.to_phase + 1):
+    # Production order: price join (3) after image verification (5); rank (4) after lot detection (6).
+    execution_order = (1, 2, 5, 3, 6, 4)
+
+    for phase in execution_order:
+        if phase < cfg.from_phase or phase > cfg.to_phase:
+            continue
         if cfg.resume and phase_done.get(phase, False):
             summary["skipped"].append(phase)
             continue

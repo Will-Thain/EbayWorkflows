@@ -39,6 +39,26 @@ Define:
 - `risk_score = 1.0 - confidence_score`
 - `ev_adjusted = ev_raw * confidence_score`
 
+## Image Verification and Pricing Guardrails
+
+Singles (Phase 5) and bulk lot crops (Phase 6) require **image evidence** before Cardmarket prices attach:
+
+| Evidence source | Phase 5 singles | Phase 6 lot crops | Confirmation strength |
+|-----------------|-----------------|-------------------|------------------------|
+| OCR name match | yes | via crop title OCR | strong alone today; supporting under planned consensus gate |
+| FAISS embedding | yes | yes | proposer; weak alone on eBay photos (generic OpenCLIP) |
+| Set + collector (zone OCR) | yes | yes | **hard confirm** when collector parses |
+| Set symbol template | yes | yes | strong for reprint disambiguation |
+| Mana colors (zone) | yes | yes | supporting / tie-breaker |
+
+Current implementation: **any one** row can set `image_verified`; Phase 4 may **sum prices** across all verified top-K candidates (bug — see architecture doc P0).
+
+Planned (blocked until P0 fixes): **one printing per listing** for pricing/EV; collector-first verification; mana/FAISS never alone (`card-recognition-architecture.md`).
+
+Bulk **listing titles** never drive pricing alone (`bulk_lot_title_requires_image_evidence`). Phase 6 uses `crop_match_allowed_for_pricing` so individual detected cards can still receive unit prices when crop evidence confirms the match.
+
+Phase 3 (price join) must run **after** Phase 5 so `pricing_eligible` reflects image verification. Pipeline scripts use order: **2 → 5 → 3 → 6 → 4**.
+
 Alternative conservative variant:
 
 - `ev_adjusted = ev_raw - risk_penalty_multiplier * risk_score`
@@ -61,6 +81,8 @@ Each score record should include an explanation payload:
 
 - selected card candidates and contributions
 - OpenCLIP similarity values and FAISS top-K details
+- `zone_evidence` payload (name/bottom OCR, set symbol score, mana colors)
+- `image_verification_source` (`ocr`, `embedding`, `set_collector`, `set_symbol`, `mana_colors`)
 - confidence component breakdown
 - penalties applied
 - scoring/model versions

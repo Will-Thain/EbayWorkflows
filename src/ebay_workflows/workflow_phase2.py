@@ -4,6 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import title_match_allowed_for_pricing
+from .services.listing_filters import is_bulk_lot_title
 from .services.progress_report import emit_progress
 from .services.title_match import (
     CardMatchEntry,
@@ -19,6 +21,7 @@ from .services.title_match import (
     TitleMatchResult,
     match_listings_parallel,
 )
+from .services.card_identifiers import build_set_collector_index
 from .services.workflow_progress import publish_step_progress
 
 
@@ -106,6 +109,9 @@ def _persist_matches(
     if not matches:
         return 0, False
 
+    if settings.phase2_skip_bulk_lot_title_match and is_bulk_lot_title(listing.title):
+        return 0, False
+
     rank = 1
     rows_created = 0
     for match in matches:
@@ -115,7 +121,7 @@ def _persist_matches(
         evidence = {
             "listing_title": listing.title,
             "matched_card_name": match.card_name,
-            "method": "rapidfuzz_wratio_prefiltered",
+            "method": match.match_method,
             "pricing_eligible": pricing_ok,
         }
         if reject_reason:
@@ -163,10 +169,21 @@ def run_phase2_title_match(
 
     try:
         listings = session.execute(select(Listing)).scalars().all()
-        card_rows = session.execute(select(ScryfallCard.id, ScryfallCard.name)).all()
+        card_rows = session.execute(
+            select(
+                ScryfallCard.id,
+                ScryfallCard.name,
+                ScryfallCard.set_code,
+                ScryfallCard.collector_number,
+            )
+        ).all()
         if not card_rows:
             raise ValueError("No Scryfall cards loaded. Run sync and load first.")
 
+        card_by_id = {
+            str(card_id): SimpleNamespace(name=name)
+            for card_id, name, _, _ in card_rows
+        }
         listing_by_id = {listing.id: listing for listing in listings}
         stored_titles = _listing_ids_with_current_title_matches(session) if settings.phase2_skip_unchanged_listings else {}
 
@@ -179,14 +196,32 @@ def run_phase2_title_match(
             to_match.append((str(listing.id), listing.title))
 
         index = ScryfallTitleIndex.from_entries(
-            [CardMatchEntry(card_id=str(card_id), name=name) for card_id, name in card_rows]
+            [
+                CardMatchEntry(
+                    card_id=str(card_id),
+                    name=name,
+                    set_code=set_code,
+                    collector_number=collector_number,
+                )
+                for card_id, name, set_code, collector_number in card_rows
+            ]
         )
+        set_collector_index = build_set_collector_index(
+            [
+                (str(card_id), set_code, collector_number)
+                for card_id, _, set_code, collector_number in card_rows
+            ]
+        )
+        scryfall_lookup = card_by_id
         match_results = match_listings_parallel(
             to_match,
             index,
             top_k=top_k,
             prefilter_size=settings.title_match_prefilter_size,
             max_workers=settings.pipeline_max_title_match_workers,
+            score_cutoff=settings.title_match_score_cutoff,
+            set_collector_index=set_collector_index,
+            card_by_id=scryfall_lookup,
         )
 
         matched_listings = 0
@@ -224,6 +259,7 @@ def run_phase2_title_match(
             "listings_rematched": len(to_match),
             "candidate_rows_created": candidate_rows,
             "title_match_prefilter_size": settings.title_match_prefilter_size,
+            "title_match_score_cutoff": settings.title_match_score_cutoff,
             "pipeline_max_title_match_workers": settings.pipeline_max_title_match_workers,
         }
         run.status = "succeeded"

@@ -81,7 +81,12 @@ def fetch_ranked_listings(
 
         top_candidate = None
         if listing.card_candidates:
-            top_candidate = sorted(listing.card_candidates, key=lambda c: c.rank_position)[0]
+            verified = sorted(
+                (c for c in listing.card_candidates if (c.evidence_json or {}).get("image_verified")),
+                key=lambda c: c.rank_position,
+            )
+            if verified:
+                top_candidate = verified[0]
 
         top_name = None
         top_match = None

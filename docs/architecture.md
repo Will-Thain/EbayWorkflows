@@ -21,13 +21,13 @@ Core components:
    - Scryfall connector for card reference matching
    - Cardmarket connector for pricing enrichment
 
-4. **Image Pipeline**
+4. **Image Pipeline** (see `card-recognition-architecture.md`)
    - image downloader/cache manager
-   - card region detector
-   - OCR extractor
-   - embedding generator
-   - vector-search candidate retriever
-   - evidence normalizer
+   - card region detector (OpenCV contours)
+   - align + zone crop extractor (name, art, bottom, symbol, mana)
+   - OCR and template/symbol matchers on zone strips
+   - embedding generator (OpenCLIP art-zone query; FAISS corpus)
+   - evidence normalizer and `image_verified` gate
 
 5. **Scoring Engine**
    - EV calculation
@@ -66,11 +66,14 @@ Core components:
 
 ## CV and Matching Stack
 
-- `OpenCV` for preprocessing and card/crop normalization
-- `OpenCLIP` for card image embeddings
-- `FAISS` for top-K candidate retrieval against Scryfall embedding corpus
-- `PaddleOCR` (or `Tesseract` fallback) for text extraction
-- `RapidFuzz` for deterministic text-level tie breaking and correction
+Propose-then-confirm design (full detail: `card-recognition-architecture.md`):
+
+- `OpenCV` — region detection, alignment, zone crops
+- `OpenCLIP` + `FAISS` — propose Scryfall candidates from art-zone embeddings
+- `Tesseract` (baseline) / `PaddleOCR` (planned) — zone OCR for confirmation
+- `set_symbol_match` + `mana_cost` — non-OCR zone confirmation signals
+- `RapidFuzz` — name reconciliation against Scryfall records
+- Optional future: Milo/CollectorVision catalog as embedder proposer (no zone replacement)
 
 ## Error Handling Strategy
 

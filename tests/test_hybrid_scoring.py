@@ -14,6 +14,7 @@ def test_hybrid_confidence_components_blend_signals() -> None:
         match_score=0.9,
         scryfall_id="11111111-1111-1111-1111-111111111111",
         evidence_json={
+            "image_verified": True,
             "ocr_verification": {"similarity": 0.85},
             "faiss_matches": [
                 {"scryfall_id": "11111111-1111-1111-1111-111111111111", "score": 0.92}
@@ -36,6 +37,7 @@ def test_embedding_disagreement_reduces_embedding_component() -> None:
         match_score=0.7,
         scryfall_id="11111111-1111-1111-1111-111111111111",
         evidence_json={
+            "image_verified": True,
             "faiss_matches": [{"scryfall_id": "22222222-2222-2222-2222-222222222222", "score": 0.8}]
         },
     )

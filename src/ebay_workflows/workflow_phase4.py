@@ -13,6 +13,7 @@ from .models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, Wo
 from .services.currency import listing_total_cost_base
 from .services.ev_guardrails import cap_ev_adjusted
 from .services.hybrid_scoring import compute_listing_score_hybrid
+from .services.image_evidence import is_verified_candidate, select_pricing_candidate
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
 
@@ -45,27 +46,28 @@ def _compute_listing_score(
             "explanation": {"reason": "no_candidates"},
         }
 
-    top = sorted(candidates, key=lambda c: c.rank_position)[:3]
     gross_value = Decimal("0")
     confidence_total = Decimal("0")
     matched = 0
     matched_cards: list[dict] = []
-    for candidate in top:
-        cm = (candidate.evidence_json or {}).get("cardmarket_price")
-        if not cm:
-            continue
-        price_amount = _to_decimal(cm.get("price_amount"))
-        confidence = _to_decimal(candidate.confidence_score, "0")
-        gross_value += price_amount
-        confidence_total += confidence
-        matched += 1
-        matched_cards.append(
-            {
-                "scryfall_id": str(candidate.scryfall_id) if candidate.scryfall_id else None,
-                "price_amount": float(price_amount),
-                "confidence": float(confidence),
-            }
-        )
+    pricing_candidate = select_pricing_candidate(candidates)
+    if pricing_candidate is not None and is_verified_candidate(pricing_candidate):
+        cm = (pricing_candidate.evidence_json or {}).get("cardmarket_price")
+        if cm:
+            price_amount = _to_decimal(cm.get("price_amount"))
+            confidence = _to_decimal(pricing_candidate.confidence_score, "0")
+            gross_value = price_amount
+            confidence_total = confidence
+            matched = 1
+            matched_cards.append(
+                {
+                    "scryfall_id": str(pricing_candidate.scryfall_id)
+                    if pricing_candidate.scryfall_id
+                    else None,
+                    "price_amount": float(price_amount),
+                    "confidence": float(confidence),
+                }
+            )
 
     listing_cost = listing_total_cost_base(listing, settings)
     ev_raw = gross_value - listing_cost
