@@ -2,4 +2,12 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot/..
 
-python -m ebay_workflows.gui.qt_app
+$python = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+if (-not (Test-Path $python)) {
+    $python = "py"
+    $guiArgs = @("-m", "ebay_workflows.gui.qt_app")
+    & $python @guiArgs
+    exit $LASTEXITCODE
+}
+
+& $python -m ebay_workflows.gui.qt_app

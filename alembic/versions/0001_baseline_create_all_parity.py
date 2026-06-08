@@ -8,8 +8,6 @@ until incremental migrations replace create_all for schema changes.
 
 from typing import Sequence, Union
 
-from alembic import op
-
 # revision identifiers, used by Alembic.
 revision: str = "0001_baseline"
 down_revision: Union[str, Sequence[str], None] = None

@@ -33,7 +33,6 @@ def _settings(**overrides) -> RecognitionSettings:
 
 
 def test_confidence_floor_rejects_faiss_override_when_title_disagrees() -> None:
-    card_a = _FakeCard("aaa", "Lightning Bolt")
     card_b = _FakeCard("bbb", "Wrong Token")
     title_result = TitleMatchResult(
         card_id="aaa",

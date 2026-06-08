@@ -29,8 +29,10 @@ from .services.set_symbol_match import build_set_symbol_templates, set_symbol_te
 from .services.health_checks import collect_operational_health
 from .services.match_stats import collect_match_stats
 from .services.pipeline_progress import collect_pipeline_progress
+from .services.stale_workflows import clear_stale_workflow_steps, list_running_workflow_views
 from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
 from .services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
+from .services.db_indexes import ensure_performance_indexes
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
 from .models import Base
 from .pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
@@ -847,6 +849,83 @@ def monitor_pipeline() -> None:
     ):
         table.add_row(label, str(stats.get(key, 0)))
     console.print(table)
+
+
+@app.command("list-stale-workflows")
+def list_stale_workflows() -> None:
+    """List workflow_steps stuck in running (live vs stale)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        views = list_running_workflow_views(
+            session,
+            local_job_id=None,
+            runner_busy=False,
+            lock_path=settings.pipeline_lock_path,
+        )
+
+    if not views:
+        console.print("[green]No workflow steps with status=running.[/green]")
+        return
+
+    table = Table(title="Running workflow steps")
+    table.add_column("State", style="cyan")
+    table.add_column("Job", style="cyan")
+    table.add_column("Step")
+    table.add_column("Age", justify="right")
+    table.add_column("Reason")
+    for view in views:
+        style = "red" if view.lifecycle == "stale" else "green"
+        table.add_row(
+            f"[{style}]{view.lifecycle.upper()}[/{style}]",
+            view.job_id,
+            view.step_name,
+            view.age_label,
+            view.reason,
+        )
+    console.print(table)
+
+
+@app.command("clear-stale-workflows")
+def clear_stale_workflows_cmd(
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
+) -> None:
+    """Mark stale running workflow steps as failed (unblocks pipeline mutex)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        views = list_running_workflow_views(
+            session,
+            local_job_id=None,
+            runner_busy=False,
+            lock_path=settings.pipeline_lock_path,
+        )
+        stale_ids = [view.step_id for view in views if view.can_clear]
+        if not stale_ids:
+            console.print("[green]No stale running workflows to clear.[/green]")
+            return
+        if not yes:
+            console.print(f"Would clear {len(stale_ids)} stale step(s). Re-run with --yes to apply.")
+            raise typer.Exit(code=1)
+        result = clear_stale_workflow_steps(
+            session,
+            stale_ids,
+            lock_path=settings.pipeline_lock_path,
+        )
+
+    console.print(
+        f"[bold green]Cleared {result.cleared_steps} stale workflow step(s).[/bold green]"
+    )
 
 
 @app.command("data-integrity-check")

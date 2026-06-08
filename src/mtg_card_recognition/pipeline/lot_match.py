@@ -144,7 +144,6 @@ def resolve_lot_crop_match(
             ]
 
     min_faiss = settings.image_evidence_min_faiss_score
-    chosen: TitleMatchResult | None = title_result
     chosen_card: Any | None = None
     chosen_score = 0.0
 

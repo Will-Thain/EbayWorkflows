@@ -64,7 +64,7 @@ Entry module: **`gui/qt_app.py`**. Shared logic (`favorites.py`, `presenters.py`
 ```text
 ┌─ EbayWorkflows ─────────────────────────────────────────────────────────┐
 │ [Workflows] [Opportunities] [Database]                                    │
-│   Workflows tab contains: [Run now] | [Schedules]                         │
+│   Workflows tab contains: [Run now] | [Schedules] | [Stuck runs]          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                           │
 │  (active tab content)                                                     │
@@ -125,22 +125,36 @@ Each job opens a **parameter dialog** before start (query, `max_pages`, flags). 
 
 ### Start
 
-1. Operator picks job + parameters → **Start**.
-2. GUI builds argv: `["ebay-workflows", ...]` with `cwd` = project root (or install root).
+1. Operator clicks a **workflow button** on **Run now** (one per phase/utility) or uses **Home** ongoing cards.
+2. Phase 1 uses **Ingest options** (query, max pages) on the same tab.
+3. GUI builds argv: `["ebay-workflows", ...]` with `cwd` = project root (or install root).
 3. **`JobRunner`** spawns `Popen` with `stdout=PIPE`, `stderr=STDOUT`, text mode, `bufsize=1`.
 4. `QProcess.readyReadStandardOutput` (or a `QThread` reader) appends lines to a **log view** (`QPlainTextEdit`) via Qt signals (never block the GUI thread on I/O).
-5. Disable **Start** while a job is running; enable **Pause** / **Stop** for GUI jobs.
+5. Disable workflow **start buttons** while a job is running; enable **Pause** / **Stop** for GUI jobs.
 6. Set `EBAY_*` / `.env` via existing `Settings` (child inherits environment).
 
 ### Run now transport bar **[Shipped]**
 
-| Button | When enabled | Action |
-|--------|----------------|--------|
-| **Start** | Idle (no GUI child, no blocking external monitor) | `JobRunner.start(job_id, params)` |
-| **Pause** | GUI job running, not paused (**Windows**) | `JobRunner.pause()` — label becomes **Resume** when paused |
+| Control | When enabled | Action |
+|---------|----------------|--------|
+| **▶ workflow buttons** | Idle (no blocking run) | `JobRunner.start(job_id, params)` for that job |
+| **Pause** | GUI job running, not paused (**Windows**) | `JobRunner.pause()` — label becomes **▶ Resume** when paused |
 | **Stop** | GUI job running | `JobRunner.stop()` — resumes first if paused, then terminate → kill |
 
-External runs detected via DB poll: **Start** / **Pause** / **Stop** disabled; status shows `External: …`.
+External runs detected via DB poll: workflow start buttons and **Pause** / **Stop** disabled; status shows `External: …`.
+
+### Stuck / stale workflows **[Shipped]**
+
+**Workflows → Stuck runs** lists every `workflow_steps` row with `status=running`, classified as **LIVE**, **WARMING**, or **STALE** (based on GUI activity, pipeline lock, and `progress_updated_at` in step metrics).
+
+| Action | Purpose |
+|--------|---------|
+| **Clear selected stale** / **Clear all stale** | Mark step (and run) `failed` with `cleared_stale` — unblocks pipeline mutex |
+| **Delete selected rows** | Remove step rows from DB (not allowed for LIVE) |
+
+**Home** ongoing cards show a red **STALE** border and **Clear stale** when applicable.
+
+CLI: `ebay-workflows list-stale-workflows`, `ebay-workflows clear-stale-workflows --yes`.
 
 ### Pause **[Shipped]** (Windows)
 
@@ -156,7 +170,7 @@ External runs detected via DB poll: **Start** / **Pause** / **Stop** disabled; s
 1. **Stop** sends `terminate()` to the child process.
 2. If not exited within N seconds (e.g. 10), `kill()`.
 3. Log line: `--- stopped by operator ---`.
-4. DB row for in-flight `workflow_steps` may remain `running` if the CLI did not finish; show a **stale run** warning and link to the Database tab (operator can inspect `error_json` / last metrics).
+4. DB row for in-flight `workflow_steps` may remain `running` if the CLI did not finish; use **Workflows → Stuck runs** or **Clear stale** on Home to mark failed and unblock new jobs.
 
 **Limitation:** Phase 5/6 cannot checkpoint mid-image; stop is best-effort process kill. Document in UI tooltip.
 

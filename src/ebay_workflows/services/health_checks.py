@@ -8,7 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import ListingImage
-from .embedding_index import faiss_index_crop_mode, index_exists, indexed_scryfall_ids, load_index_meta
+from .embedding_index import (
+    count_indexable_art_cards,
+    faiss_index_crop_mode,
+    index_exists,
+    indexed_scryfall_ids,
+    load_index_meta,
+)
 from .match_stats import collect_match_stats
 
 if TYPE_CHECKING:
