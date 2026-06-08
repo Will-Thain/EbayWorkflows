@@ -32,6 +32,7 @@ from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
 from .services.image_evidence import apply_per_listing_verification_gates, region_zone_evidence_matches_card
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
+from .workflow_errors import fail_workflow_step
 
 
 def _now() -> datetime:
@@ -502,12 +503,7 @@ def run_phase5_ocr_verification(
         run.finished_at = _now()
         session.commit()
     except Exception as exc:  # noqa: BLE001
-        step.status = "failed"
-        step.finished_at = _now()
-        step.error_json = {"message": str(exc)}
-        run.status = "failed"
-        run.finished_at = _now()
-        session.commit()
+        fail_workflow_step(session, step, run, exc)
         raise
 
     return str(run.id)

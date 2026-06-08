@@ -18,7 +18,7 @@ def run_due_schedules() -> int:
         if due_count == 0:
             return 0
         while True:
-            job = try_dispatch_one_due(session, use_gui_runner=None)
+            job = try_dispatch_one_due(session, use_gui_runner=None, log_dir=settings.workflow_log_dir)
             if job is None:
                 break
             dispatched += 1

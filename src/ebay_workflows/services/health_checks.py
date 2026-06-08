@@ -15,7 +15,11 @@ from .embedding_index import (
     indexed_scryfall_ids,
     load_index_meta,
 )
+import structlog
+
 from .match_stats import collect_match_stats
+
+logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
     from ..config import Settings
@@ -102,7 +106,7 @@ def collect_operational_health(session: Session, settings: Settings) -> dict[str
     try:
         match_stats = collect_match_stats(session)
         health["match_stats"] = match_stats
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("health_check_match_stats_failed", error=str(exc), exc_info=exc)
 
     return health

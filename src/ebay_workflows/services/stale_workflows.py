@@ -11,20 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import WorkflowRun, WorkflowStep
+from ..workflow_errors import build_operator_error_json
+from ..workflow_steps import job_id_for_step
 from .pipeline_lock import _pid_alive
-
-STEP_TO_JOB: dict[str, str] = {
-    "phase1_ingest": "phase1",
-    "phase2_title_match": "phase2",
-    "phase3_cardmarket_join": "phase3",
-    "phase4_ev_ranking": "phase4",
-    "phase5_ocr_verification": "phase5",
-    "phase6_bulk_lot_detection": "phase6",
-}
-
-
-def _job_id_for_step(step_name: str) -> str:
-    return STEP_TO_JOB.get(step_name, step_name)
 
 
 def _elapsed_label(step: WorkflowStep) -> str:
@@ -145,7 +134,7 @@ def list_running_workflow_views(
 
     views: list[RunningWorkflowView] = []
     for step, run in rows:
-        job_id = _job_id_for_step(step.step_name)
+        job_id = job_id_for_step(step.step_name)
         lifecycle, reason = classify_step_lifecycle(
             step=step,
             job_id=job_id,
@@ -212,7 +201,7 @@ def clear_stale_workflow_steps(
         run = session.get(WorkflowRun, step.run_id)
         step.status = "failed"
         step.finished_at = now
-        step.error_json = {"message": reason, "cleared_stale": True}
+        step.error_json = build_operator_error_json(reason, cleared_stale=True)
         if run is not None and run.status == "running":
             run.status = "failed"
             run.finished_at = now

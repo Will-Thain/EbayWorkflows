@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     cardmarket_bulk_refresh_hours: int = Field(default=24, alias="CARDMARKET_BULK_REFRESH_HOURS")
 
     image_cache_dir: str = Field(alias="IMAGE_CACHE_DIR")
+    workflow_log_dir: str = Field(default="./data/logs", alias="WORKFLOW_LOG_DIR")
     image_download_timeout_ms: int = Field(default=20000, alias="IMAGE_DOWNLOAD_TIMEOUT_MS")
     ocr_engine: str = Field(default="pytesseract", alias="OCR_ENGINE")
     tesseract_cmd: str | None = Field(default=None, alias="TESSERACT_CMD")

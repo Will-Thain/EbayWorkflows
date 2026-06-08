@@ -6,7 +6,6 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -24,6 +23,8 @@ from ..services.progress_report import ProgressSnapshot, format_progress_label
 from ..services.stale_workflows import clear_stale_workflow_steps, list_running_workflow_views
 from .job_runner import JobRunner
 from .models_qt import GenericTableModel
+from .poll_errors import GuiPollErrorReporter, handle_poll_error
+from .theme import apply_tab_layout, configure_data_table
 from .workflow_catalog import WORKFLOW_JOBS
 from .workflow_monitor import (
     ActiveWorkflow,
@@ -35,50 +36,35 @@ from .workflow_monitor import (
     workflow_control_flags,
     workflow_source_label,
 )
+from .widgets import CardFrame, PageHeader, SectionTitle, StatCard, StatusChip
 
 
-class StatCard(QFrame):
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        self._value = QLabel("—")
-        self._value.setStyleSheet("font-size: 22px; font-weight: bold;")
-        self._value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._value)
-        caption = QLabel(title)
-        caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        caption.setStyleSheet("color: palette(mid);")
-        layout.addWidget(caption)
-
-    def set_value(self, text: str) -> None:
-        self._value.setText(text)
-
-
-class OngoingWorkflowCard(QFrame):
+class OngoingWorkflowCard(CardFrame):
     stop_requested = Signal()
     pause_requested = Signal()
     resume_requested = Signal()
     clear_stale_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__("workflowCard", parent)
         self._step_id = ""
-        self.setFrameShape(QFrame.Shape.StyledPanel)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         self._title = QLabel()
-        self._title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self._title.setObjectName("tileTitle")
         header.addWidget(self._title, stretch=1)
+        self._status_chip = StatusChip()
+        header.addWidget(self._status_chip)
         self._source = QLabel()
-        self._source.setStyleSheet("font-size: 11px; color: palette(mid);")
+        self._source.setObjectName("caption")
         header.addWidget(self._source)
         layout.addLayout(header)
 
         self._meta = QLabel()
+        self._meta.setObjectName("caption")
         self._meta.setWordWrap(True)
         layout.addWidget(self._meta)
 
@@ -87,25 +73,30 @@ class OngoingWorkflowCard(QFrame):
         layout.addWidget(self._progress)
 
         self._progress_detail = QLabel()
+        self._progress_detail.setObjectName("caption")
         layout.addWidget(self._progress_detail)
 
         actions = QHBoxLayout()
-        self._resume_btn = QPushButton("▶ Start")
-        self._resume_btn.setToolTip("Resume a paused GUI workflow (Start)")
+        self._resume_btn = QPushButton("Start")
+        self._resume_btn.setObjectName("secondaryButton")
+        self._resume_btn.setToolTip("Resume a paused GUI workflow")
         self._resume_btn.clicked.connect(self.resume_requested.emit)
         actions.addWidget(self._resume_btn)
 
-        self._pause_btn = QPushButton("⏸ Pause")
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setObjectName("secondaryButton")
         self._pause_btn.setToolTip("Pause the GUI workflow process (Windows)")
         self._pause_btn.clicked.connect(self.pause_requested.emit)
         actions.addWidget(self._pause_btn)
 
-        self._stop_btn = QPushButton("⏹ Stop")
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.setObjectName("dangerButton")
         self._stop_btn.setToolTip("Stop the GUI workflow process")
         self._stop_btn.clicked.connect(self.stop_requested.emit)
         actions.addWidget(self._stop_btn)
 
         self._clear_btn = QPushButton("Clear stale")
+        self._clear_btn.setObjectName("dangerButton")
         self._clear_btn.setToolTip("Mark this hung workflow as failed so new jobs can start")
         self._clear_btn.clicked.connect(self._emit_clear_stale)
         self._clear_btn.setVisible(False)
@@ -136,15 +127,22 @@ class OngoingWorkflowCard(QFrame):
         title = job.label if job else active.job_id
         self._title.setText(title)
         self._source.setText(source)
+
+        chip_state = lifecycle
+        if control_flags.get("can_resume"):
+            chip_state = "paused"
+        elif source == "External" and lifecycle == "live":
+            chip_state = "external"
+        self._status_chip.set_state(chip_state)
+
         paused_note = " · paused" if control_flags.get("can_resume") else ""
-        lifecycle_note = ""
-        if lifecycle == "stale":
-            lifecycle_note = f" · STALE — {stale_reason}"
-        elif lifecycle == "warming":
-            lifecycle_note = " · warming up"
-        self._meta.setText(
-            f"{active.step_label} · phase {active.step.phase_number} · {elapsed}{paused_note}{lifecycle_note}"
-        )
+        detail = stale_reason if lifecycle == "stale" and stale_reason else ""
+        meta_parts = [
+            f"{active.step_label} · phase {active.step.phase_number} · {elapsed}{paused_note}",
+        ]
+        if detail:
+            meta_parts.append(detail)
+        self._meta.setText("\n".join(meta_parts))
 
         if progress and progress.total > 0:
             self._progress.setRange(0, progress.total)
@@ -157,30 +155,20 @@ class OngoingWorkflowCard(QFrame):
             self._progress.setFormat("In progress…")
             self._progress_detail.setText("Waiting for progress metrics…")
 
-        can_stop = control_flags.get("can_stop", False)
-        can_pause = control_flags.get("can_pause", False)
-        can_resume = control_flags.get("can_resume", False)
-
-        self._stop_btn.setEnabled(can_stop)
-        self._pause_btn.setEnabled(can_pause)
-        self._resume_btn.setEnabled(can_resume)
+        self._stop_btn.setEnabled(control_flags.get("can_stop", False))
+        self._pause_btn.setEnabled(control_flags.get("can_pause", False))
+        self._resume_btn.setEnabled(control_flags.get("can_resume", False))
         self._clear_btn.setVisible(can_clear_stale)
         self._clear_btn.setEnabled(can_clear_stale)
 
+        card_state = ""
         if lifecycle == "stale":
-            self.setStyleSheet(
-                "border: 2px solid #c0392b;"
-                " background: palette(alternate-base);"
-                " border-radius: 6px;"
-            )
+            card_state = "stale"
         elif control_flags.get("can_resume"):
-            self.setStyleSheet(
-                "border: 2px solid palette(highlight);"
-                " background: palette(alternate-base);"
-                " border-radius: 6px;"
-            )
-        else:
-            self.setStyleSheet("")
+            card_state = "paused"
+        elif lifecycle == "warming":
+            card_state = "warming"
+        self.set_card_state(card_state)
 
         if source == "External":
             tip = "Started outside the GUI — use the terminal (Ctrl+C) to stop."
@@ -206,27 +194,29 @@ class DashboardTab(QWidget):
         session_factory,
         job_runner: JobRunner,
         settings: Settings | None = None,
+        poll_reporter: GuiPollErrorReporter | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._session_factory = session_factory
         self._runner = job_runner
         self._settings = settings
+        self._poll_reporter = poll_reporter
         self._ongoing_cards: dict[str, OngoingWorkflowCard] = {}
 
-        root = QVBoxLayout(self)
-        root.setSpacing(16)
+        root = apply_tab_layout(self)
 
-        title = QLabel("Dashboard")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        root.addWidget(title)
+        root.addWidget(
+            PageHeader("Dashboard", "Pipeline overview and active workflow runs")
+        )
 
         stats_row = QHBoxLayout()
+        stats_row.setSpacing(10)
         self._stat_listings = StatCard("Listings")
-        self._stat_ranked = StatCard("Ranked")
-        self._stat_favorites = StatCard("Favourites")
-        self._stat_images = StatCard("Images cached")
-        self._stat_running = StatCard("Running now")
+        self._stat_ranked = StatCard("Ranked", accent="ranked")
+        self._stat_favorites = StatCard("Favourites", accent="favorites")
+        self._stat_images = StatCard("Images cached", accent="images")
+        self._stat_running = StatCard("Running now", accent="running")
         for card in (
             self._stat_listings,
             self._stat_ranked,
@@ -238,29 +228,30 @@ class DashboardTab(QWidget):
         root.addLayout(stats_row)
 
         ongoing_header = QHBoxLayout()
-        ongoing_header.addWidget(QLabel("Ongoing workflows"))
+        ongoing_header.addWidget(SectionTitle("Ongoing workflows"))
         ongoing_header.addStretch()
         manage_btn = QPushButton("Manage workflows →")
+        manage_btn.setObjectName("linkButton")
         manage_btn.clicked.connect(self.navigate_to_workflows.emit)
         ongoing_header.addWidget(manage_btn)
         root.addLayout(ongoing_header)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._ongoing_host = QWidget()
         self._ongoing_layout = QVBoxLayout(self._ongoing_host)
         self._ongoing_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._ongoing_layout.setSpacing(10)
         scroll.setWidget(self._ongoing_host)
         root.addWidget(scroll, stretch=2)
 
         recent_box = QGroupBox("Recent workflow activity")
         recent_layout = QVBoxLayout(recent_box)
         self._recent_table = QTableView()
+        configure_data_table(self._recent_table)
         self._recent_model = GenericTableModel(self)
         self._recent_table.setModel(self._recent_model)
-        self._recent_table.setAlternatingRowColors(True)
-        self._recent_table.horizontalHeader().setStretchLastSection(True)
         recent_layout.addWidget(self._recent_table)
         root.addWidget(recent_box, stretch=1)
 
@@ -290,8 +281,12 @@ class DashboardTab(QWidget):
                     views_by_step = {str(view.step_id): view for view in views}
                 for active in running:
                     progress_by_step[str(active.step.id)] = resolve_progress(session, active)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            handle_poll_error(self._poll_reporter, exc, context="Dashboard")
             return
+
+        if self._poll_reporter is not None:
+            self._poll_reporter.report_success()
 
         self._stat_listings.set_value(f"{stats.listing_count:,}")
         self._stat_ranked.set_value(f"{stats.ranked_count:,}")
@@ -320,13 +315,12 @@ class DashboardTab(QWidget):
         if not running:
             if self._ongoing_layout.count() == 0:
                 empty = QLabel("No workflows are running.")
-                empty.setObjectName("ongoing_empty")
+                empty.setObjectName("emptyState")
                 empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                empty.setStyleSheet("color: palette(mid); padding: 24px;")
                 self._ongoing_layout.addWidget(empty)
             return
 
-        empty = self._ongoing_host.findChild(QLabel, "ongoing_empty")
+        empty = self._ongoing_host.findChild(QLabel, "emptyState")
         if empty is not None:
             self._ongoing_layout.removeWidget(empty)
             empty.deleteLater()

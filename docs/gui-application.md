@@ -133,11 +133,15 @@ Each job opens a **parameter dialog** before start (query, `max_pages`, flags). 
 5. Disable workflow **start buttons** while a job is running; enable **Pause** / **Stop** for GUI jobs.
 6. Set `EBAY_*` / `.env` via existing `Settings` (child inherits environment).
 
+### Visual theme **[Shipped]**
+
+Central styling lives in `gui/styles/app.qss`, loaded by `gui/theme.py` at startup. Shared widgets (`PageHeader`, `StatCard`, `WorkflowTile`, `StatusChip`) use `objectName` and dynamic properties instead of inline stylesheets. See **`gui-visual-design.md`** for tokens, palette, and extension guidelines.
+
 ### Run now transport bar **[Shipped]**
 
 | Control | When enabled | Action |
 |---------|----------------|--------|
-| **▶ workflow buttons** | Idle (no blocking run) | `JobRunner.start(job_id, params)` for that job |
+| **Workflow tiles** | Idle (no blocking run) | `JobRunner.start(job_id, params)` for that job |
 | **Pause** | GUI job running, not paused (**Windows**) | `JobRunner.pause()` — label becomes **▶ Resume** when paused |
 | **Stop** | GUI job running | `JobRunner.stop()` — resumes first if paused, then terminate → kill |
 

@@ -23,6 +23,7 @@ from .services.title_match import (
 )
 from .services.card_identifiers import build_set_collector_index
 from .services.workflow_progress import publish_step_progress
+from .workflow_errors import fail_workflow_step
 
 
 def _now() -> datetime:
@@ -266,12 +267,7 @@ def run_phase2_title_match(
         run.finished_at = _now()
         session.commit()
     except Exception as exc:  # noqa: BLE001
-        step.status = "failed"
-        step.finished_at = _now()
-        step.error_json = {"message": str(exc)}
-        run.status = "failed"
-        run.finished_at = _now()
-        session.commit()
+        fail_workflow_step(session, step, run, exc)
         raise
 
     return str(run.id)

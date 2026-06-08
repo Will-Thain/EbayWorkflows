@@ -34,6 +34,7 @@ When a line mixes shipped and planned parts, tag each clause: e.g. “FAISS corr
 | `product-requirements.md` | **[Shipped]** | Scope + strict verify requirements |
 | `error-model.md` | **[Shipped]** | Error categories and exit codes |
 | `gui-application.md` | **[Shipped]** | PySide6 spec; provenance UI; Start/Pause/Stop transport |
+| `gui-visual-design.md` | **[Shipped]** | Theme tokens, QSS architecture, widget plan |
 | `gui-operator-workflows.md` | **[Shipped]** | Operator flows + verify review |
 | `gui-build-prerequisites.md` | **[Shipped]** | Checklist (GUI-0–7 complete) |
 | `gui-windows-scheduler.md` | **[Shipped]** | Headless `run-due-schedules` |

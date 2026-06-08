@@ -22,7 +22,7 @@ class BboxImageWidget(QLabel):
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumHeight(240)
-        self.setStyleSheet("background: palette(mid); border: 1px solid palette(midlight);")
+        self.setObjectName("imagePreview")
         self._source: QPixmap | None = None
         self._bboxes: list[tuple[float, float, float, float]] = []
         self._highlight: int | None = None

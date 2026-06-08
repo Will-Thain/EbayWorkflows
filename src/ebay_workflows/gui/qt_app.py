@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
-    QStyleFactory,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -38,6 +37,7 @@ from ..services.match_stats import collect_match_stats
 from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .dashboard_tab import DashboardTab
 from .job_runner import JobRunner
+from .poll_errors import GuiPollErrorReporter, handle_poll_error
 from .schedules_panel import SchedulesPanel
 from .stale_workflows_panel import StaleWorkflowsPanel
 from .progress_estimates import estimate_job_total, poll_job_progress
@@ -55,6 +55,8 @@ from .db_browser import CURATED_QUERIES, run_curated_query
 from .listing_detail import fetch_listing_detail
 from .match_widgets import ListingDetailPanel
 from .models_qt import GenericTableModel, RankedListTableModel
+from .theme import apply_tab_layout, configure_data_table
+from .widgets import PageHeader, SectionTitle, WorkflowTile
 
 
 class OpportunitiesTab(QWidget):
@@ -65,7 +67,7 @@ class OpportunitiesTab(QWidget):
         self._rows: list[RankedListingRow] = []
         self._selected_id: uuid.UUID | None = None
 
-        layout = QVBoxLayout(self)
+        layout = apply_tab_layout(self)
 
         toolbar = QHBoxLayout()
         toolbar.addWidget(QLabel("Show:"))
@@ -82,10 +84,12 @@ class OpportunitiesTab(QWidget):
         toolbar.addWidget(self._limit_combo)
 
         refresh_btn = QPushButton("Refresh")
+        refresh_btn.setObjectName("secondaryButton")
         refresh_btn.clicked.connect(self.refresh)
         toolbar.addWidget(refresh_btn)
 
         self._open_ebay_btn = QPushButton("Open on eBay")
+        self._open_ebay_btn.setObjectName("primaryButton")
         self._open_ebay_btn.clicked.connect(self._open_ebay)
         self._open_ebay_btn.setEnabled(False)
         toolbar.addWidget(self._open_ebay_btn)
@@ -97,9 +101,9 @@ class OpportunitiesTab(QWidget):
         self._table = QTableView()
         self._model = RankedListTableModel(self)
         self._table.setModel(self._model)
-        self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self._table.setSortingEnabled(True)
+        configure_data_table(self._table)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.selectionModel().selectionChanged.connect(self._on_selection_changed)
         splitter.addWidget(self._table)
@@ -109,16 +113,18 @@ class OpportunitiesTab(QWidget):
 
         self._title_label = QLabel("Select a listing")
         self._title_label.setWordWrap(True)
-        self._title_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self._title_label.setObjectName("sectionTitle")
         detail_layout.addWidget(self._title_label)
 
         self._meta_label = QLabel("")
+        self._meta_label.setObjectName("caption")
         self._meta_label.setWordWrap(True)
         detail_layout.addWidget(self._meta_label)
 
         fav_box = QGroupBox("Favourite")
         fav_form = QFormLayout(fav_box)
         self._fav_btn = QPushButton("☆ Favourite")
+        self._fav_btn.setObjectName("secondaryButton")
         self._fav_btn.clicked.connect(self._toggle_favorite)
         self._fav_btn.setEnabled(False)
         fav_form.addRow(self._fav_btn)
@@ -256,7 +262,7 @@ class DatabaseTab(QWidget):
         self._headers: list[str] = []
         self._rows: list[tuple] = []
 
-        layout = QVBoxLayout(self)
+        layout = apply_tab_layout(self)
         toolbar = QHBoxLayout()
         toolbar.addWidget(QLabel("Query:"))
         self._query_combo = QComboBox()
@@ -265,10 +271,12 @@ class DatabaseTab(QWidget):
         toolbar.addWidget(self._query_combo, stretch=1)
 
         run_btn = QPushButton("Run")
+        run_btn.setObjectName("primaryButton")
         run_btn.clicked.connect(self.run_query)
         toolbar.addWidget(run_btn)
 
         export_btn = QPushButton("Export CSV")
+        export_btn.setObjectName("secondaryButton")
         export_btn.clicked.connect(self.export_csv)
         toolbar.addWidget(export_btn)
         layout.addLayout(toolbar)
@@ -277,7 +285,7 @@ class DatabaseTab(QWidget):
         self._model = GenericTableModel(self)
         self._table.setModel(self._model)
         self._table.setSortingEnabled(True)
-        self._table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self._table)
         layout.addWidget(self._table)
 
         self.run_query()
@@ -319,6 +327,7 @@ class WorkflowsTab(QWidget):
         session_factory,
         job_runner: JobRunner,
         on_ranking_refresh,
+        poll_reporter: GuiPollErrorReporter | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -326,33 +335,35 @@ class WorkflowsTab(QWidget):
         self._session_factory = session_factory
         self._runner = job_runner
         self._on_ranking_refresh = on_ranking_refresh
+        self._poll_reporter = poll_reporter
         self._active_job_id: str | None = None
         self._monitored_step_id: str | None = None
         self._last_external_job_id: str | None = None
         self._progress_snapshot = None
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         inner_tabs = QTabWidget()
         run_now = QWidget()
-        run_layout = QVBoxLayout(run_now)
+        run_layout = apply_tab_layout(run_now)
 
-        jobs_box = QGroupBox("Start a workflow")
+        run_layout.addWidget(
+            PageHeader("Run workflow", "Start a pipeline phase manually from the GUI")
+        )
+
+        jobs_box = QGroupBox("Available workflows")
         jobs_layout = QGridLayout(jobs_box)
-        jobs_layout.setHorizontalSpacing(8)
-        jobs_layout.setVerticalSpacing(8)
-        self._job_buttons: dict[str, QPushButton] = {}
+        jobs_layout.setHorizontalSpacing(10)
+        jobs_layout.setVerticalSpacing(10)
+        self._job_tiles: dict[str, WorkflowTile] = {}
         columns = 3
         for index, job_id in enumerate(WORKFLOW_LAUNCH_ORDER):
             job = WORKFLOW_JOBS[job_id]
-            btn = QPushButton(f"▶ {job.label}")
-            btn.setToolTip(
-                f"Start {job.label} ({job.duration_tier} run). "
-                f"Job id: {job_id}"
-            )
-            btn.clicked.connect(lambda _checked=False, jid=job_id: self._start_job(jid))
+            tile = WorkflowTile(job_id, job.label, job.duration_tier)
+            tile.run_requested.connect(self._start_job)
             row, col = divmod(index, columns)
-            jobs_layout.addWidget(btn, row, col)
-            self._job_buttons[job_id] = btn
+            jobs_layout.addWidget(tile, row, col)
+            self._job_tiles[job_id] = tile
         run_layout.addWidget(jobs_box)
 
         params_box = QGroupBox("Ingest (phase 1) options")
@@ -368,13 +379,15 @@ class WorkflowsTab(QWidget):
         run_layout.addWidget(params_box)
 
         transport = QHBoxLayout()
-        transport.addWidget(QLabel("Running job:"))
-        self._pause_btn = QPushButton("⏸ Pause")
+        transport.addWidget(SectionTitle("Transport"))
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setObjectName("secondaryButton")
         self._pause_btn.setToolTip("Pause or resume the running GUI workflow (Windows)")
         self._pause_btn.clicked.connect(self._toggle_pause)
         self._pause_btn.setEnabled(False)
         transport.addWidget(self._pause_btn)
-        self._stop_btn = QPushButton("⏹ Stop")
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.setObjectName("dangerButton")
         self._stop_btn.setToolTip("Stop the running GUI workflow")
         self._stop_btn.clicked.connect(self._runner.stop)
         self._stop_btn.setEnabled(False)
@@ -383,6 +396,7 @@ class WorkflowsTab(QWidget):
         run_layout.addLayout(transport)
 
         self._phase_status = QLabel("Idle")
+        self._phase_status.setObjectName("caption")
         run_layout.addWidget(self._phase_status)
 
         self._progress_bar = QProgressBar()
@@ -393,16 +407,20 @@ class WorkflowsTab(QWidget):
         run_layout.addWidget(self._progress_bar)
 
         self._progress_label = QLabel("")
+        self._progress_label.setObjectName("caption")
         run_layout.addWidget(self._progress_label)
 
         self._log = QPlainTextEdit()
+        self._log.setObjectName("logPanel")
         self._log.setReadOnly(True)
         self._log.setPlaceholderText("CLI output appears here…")
         run_layout.addWidget(self._log, stretch=1)
 
         inner_tabs.addTab(run_now, "Run now")
         inner_tabs.addTab(SchedulesPanel(session_factory, job_runner), "Schedules")
-        self._stale_panel = StaleWorkflowsPanel(settings, session_factory, job_runner)
+        self._stale_panel = StaleWorkflowsPanel(
+            settings, session_factory, job_runner, poll_reporter=poll_reporter
+        )
         self._stale_panel.changed.connect(self._poll_workflow_status)
         inner_tabs.addTab(self._stale_panel, "Stuck runs")
         layout.addWidget(inner_tabs)
@@ -478,9 +496,9 @@ class WorkflowsTab(QWidget):
         pause_supported = sys.platform == "win32"
         active_id = self._active_job_id if local_running else self._last_external_job_id
         if external:
-            self._set_job_buttons_enabled(False, active_job_id=active_id, external=True)
+            self._set_job_tiles_enabled(False, active_job_id=active_id)
             self._pause_btn.setEnabled(False)
-            self._pause_btn.setText("⏸ Pause")
+            self._pause_btn.setText("Pause")
             self._stop_btn.setEnabled(False)
             self._stop_btn.setToolTip(
                 "This job was started outside the GUI. Stop it from the terminal (Ctrl+C)."
@@ -489,40 +507,31 @@ class WorkflowsTab(QWidget):
 
         self._stop_btn.setToolTip("Stop the running GUI workflow")
         if local_running:
-            self._set_job_buttons_enabled(False, active_job_id=active_id)
+            self._set_job_tiles_enabled(False, active_job_id=active_id)
             self._stop_btn.setEnabled(True)
             if paused:
-                self._pause_btn.setText("▶ Resume")
+                self._pause_btn.setText("Resume")
                 self._pause_btn.setEnabled(pause_supported)
             else:
-                self._pause_btn.setText("⏸ Pause")
+                self._pause_btn.setText("Pause")
                 self._pause_btn.setEnabled(pause_supported)
             if not pause_supported:
                 self._pause_btn.setToolTip("Pause is only supported on Windows.")
         else:
-            self._set_job_buttons_enabled(True)
+            self._set_job_tiles_enabled(True)
             self._pause_btn.setEnabled(False)
-            self._pause_btn.setText("⏸ Pause")
+            self._pause_btn.setText("Pause")
             self._stop_btn.setEnabled(False)
 
-    def _set_job_buttons_enabled(
+    def _set_job_tiles_enabled(
         self,
         enabled: bool,
         *,
         active_job_id: str | None = None,
-        external: bool = False,
     ) -> None:
-        active_style = (
-            "font-weight: bold; border: 2px solid palette(highlight);"
-            if external
-            else "font-weight: bold; background: palette(alternate-base);"
-        )
-        for job_id, btn in self._job_buttons.items():
-            btn.setEnabled(enabled)
-            if not enabled and job_id == active_job_id:
-                btn.setStyleSheet(active_style)
-            else:
-                btn.setStyleSheet("")
+        for job_id, tile in self._job_tiles.items():
+            tile.set_enabled(enabled)
+            tile.set_active(not enabled and job_id == active_job_id)
 
     def _on_job_paused(self, job_id: str) -> None:
         self._phase_status.setText(f"Paused: {job_id}")
@@ -610,6 +619,8 @@ class WorkflowsTab(QWidget):
                         self._on_external_finished(finished_job)
                     elif not local_busy and self._phase_status.text().startswith("External:"):
                         self._phase_status.setText("Idle")
+                    if self._poll_reporter is not None:
+                        self._poll_reporter.report_success()
                     return
 
                 step_id = str(active.step.id)
@@ -653,8 +664,11 @@ class WorkflowsTab(QWidget):
                             or snap.current > self._progress_snapshot.current
                         ):
                             self._apply_progress(snap)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            handle_poll_error(self._poll_reporter, exc, context="Workflow progress")
             return
+        if self._poll_reporter is not None:
+            self._poll_reporter.report_success()
 
 
 class MainWindow(QMainWindow):
@@ -673,11 +687,23 @@ class MainWindow(QMainWindow):
         self._settings = settings
         self._session_factory = build_session_factory(settings)
 
+        self._poll_warning = QLabel("")
+        self._poll_warning.setObjectName("pollWarning")
+        self.statusBar().addWidget(self._poll_warning)
+
+        self._poll_reporter = GuiPollErrorReporter(on_message=self._set_poll_warning)
+
         self._job_runner = JobRunner(self)
 
         tabs = QTabWidget()
+        tabs.setObjectName("mainTabs")
         self._tabs = tabs
-        self._dashboard = DashboardTab(self._session_factory, self._job_runner, settings)
+        self._dashboard = DashboardTab(
+            self._session_factory,
+            self._job_runner,
+            settings,
+            poll_reporter=self._poll_reporter,
+        )
         tabs.addTab(self._dashboard, "Home")
         self._opportunities = OpportunitiesTab(settings, self._session_factory)
         tabs.addTab(self._opportunities, "Opportunities")
@@ -686,6 +712,7 @@ class MainWindow(QMainWindow):
             self._session_factory,
             self._job_runner,
             on_ranking_refresh=self._opportunities.refresh,
+            poll_reporter=self._poll_reporter,
         )
         tabs.addTab(self._workflows, "Workflows")
         tabs.addTab(DatabaseTab(self._session_factory), "Database")
@@ -703,6 +730,9 @@ class MainWindow(QMainWindow):
         self._status_poll.start()
         self._opportunities.refresh()
         self._update_status()
+
+    def _set_poll_warning(self, message: str | None) -> None:
+        self._poll_warning.setText(message or "")
 
     def _update_status(self) -> None:
         count = len(self._opportunities._rows)
@@ -733,8 +763,10 @@ class MainWindow(QMainWindow):
                         else:
                             prog = "starting…"
                         parts.append(f"Running: {name} {prog} · {elapsed}")
-        except Exception:  # noqa: BLE001
-            pass
+            if self._poll_reporter is not None:
+                self._poll_reporter.report_success()
+        except Exception as exc:  # noqa: BLE001
+            handle_poll_error(self._poll_reporter, exc, context="Status bar")
         if self._job_runner.is_busy():
             job = self._job_runner.current_job_id or "job"
             state = "paused" if self._job_runner.is_paused() else "running"
@@ -745,8 +777,16 @@ class MainWindow(QMainWindow):
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("EbayWorkflows")
-    if "Fusion" in QStyleFactory.keys():
-        app.setStyle("Fusion")
+    from .theme import apply_app_theme
+
+    apply_app_theme(app)
+
+    from ..logging_config import configure_logging
+
+    try:
+        configure_logging(Settings().log_level)
+    except Exception:  # noqa: BLE001
+        configure_logging("info")
 
     window = MainWindow()
     window.show()
