@@ -12,6 +12,7 @@ from .config import Settings
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .models import CardPrice, Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import apply_price_to_evidence
+from .workflow_errors import fail_workflow_step
 
 
 def _now() -> datetime:
@@ -161,12 +162,7 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
         run.finished_at = _now()
         session.commit()
     except Exception as exc:  # noqa: BLE001
-        step.status = "failed"
-        step.finished_at = _now()
-        step.error_json = {"message": str(exc)}
-        run.status = "failed"
-        run.finished_at = _now()
-        session.commit()
+        fail_workflow_step(session, step, run, exc)
         raise
 
     return str(run.id)

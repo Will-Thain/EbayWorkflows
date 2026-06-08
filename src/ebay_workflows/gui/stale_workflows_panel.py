@@ -5,7 +5,6 @@ import uuid
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QMessageBox,
     QPushButton,
     QTableView,
@@ -21,6 +20,9 @@ from ..services.stale_workflows import (
 )
 from .job_runner import JobRunner
 from .models_qt import GenericTableModel
+from .poll_errors import GuiPollErrorReporter, handle_poll_error
+from .theme import configure_data_table
+from .widgets import HintLabel
 
 
 class StaleWorkflowsPanel(QWidget):
@@ -33,51 +35,56 @@ class StaleWorkflowsPanel(QWidget):
         settings: Settings,
         session_factory,
         job_runner: JobRunner,
+        poll_reporter: GuiPollErrorReporter | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
         self._session_factory = session_factory
         self._runner = job_runner
+        self._poll_reporter = poll_reporter
         self._views: list = []
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        hint = QLabel(
-            "Rows with status running in the database. "
-            "Stale rows have no recent progress and can be cleared to unblock new jobs."
+        layout.addWidget(
+            HintLabel(
+                "Rows with status running in the database. "
+                "Stale rows have no recent progress and can be cleared to unblock new jobs."
+            )
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: palette(mid);")
-        layout.addWidget(hint)
 
         self._table = QTableView()
         self._model = GenericTableModel(self)
         self._table.setModel(self._model)
-        self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
-        self._table.setAlternatingRowColors(True)
-        self._table.horizontalHeader().setStretchLastSection(True)
+        configure_data_table(self._table)
         layout.addWidget(self._table, stretch=1)
 
         actions = QHBoxLayout()
         self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setObjectName("secondaryButton")
         self._refresh_btn.clicked.connect(self.refresh)
         actions.addWidget(self._refresh_btn)
 
         self._clear_selected_btn = QPushButton("Clear selected stale")
+        self._clear_selected_btn.setObjectName("primaryButton")
         self._clear_selected_btn.setToolTip("Mark the selected stale step as failed")
         self._clear_selected_btn.clicked.connect(self._clear_selected)
         self._clear_selected_btn.setEnabled(False)
         actions.addWidget(self._clear_selected_btn)
 
         self._clear_all_btn = QPushButton("Clear all stale")
+        self._clear_all_btn.setObjectName("primaryButton")
         self._clear_all_btn.setToolTip("Mark every stale running step as failed")
         self._clear_all_btn.clicked.connect(self._clear_all_stale)
         self._clear_all_btn.setEnabled(False)
         actions.addWidget(self._clear_all_btn)
 
         self._delete_btn = QPushButton("Delete selected rows")
+        self._delete_btn.setObjectName("dangerButton")
         self._delete_btn.setToolTip("Remove selected step rows from the database")
         self._delete_btn.clicked.connect(self._delete_selected)
         self._delete_btn.setEnabled(False)
@@ -104,8 +111,12 @@ class StaleWorkflowsPanel(QWidget):
                     runner_busy=self._runner.is_busy(),
                     lock_path=self._settings.pipeline_lock_path,
                 )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            handle_poll_error(self._poll_reporter, exc, context="Stuck runs")
             return
+
+        if self._poll_reporter is not None:
+            self._poll_reporter.report_success()
 
         headers = ["State", "Job", "Step", "Phase", "Age", "Reason"]
         rows = [

@@ -35,6 +35,7 @@ from .services.listing_condition import adjust_price_for_listing_condition
 from .services.lot_crop_match import resolve_lot_crop_match
 from .services.title_match import CardMatchEntry, ScryfallTitleIndex
 from .services.workflow_progress import publish_step_progress
+from .workflow_errors import fail_workflow_step
 
 
 def _now() -> datetime:
@@ -468,12 +469,7 @@ def run_phase6_bulk_lot_detection(
         run.finished_at = _now()
         session.commit()
     except Exception as exc:  # noqa: BLE001
-        step.status = "failed"
-        step.finished_at = _now()
-        step.error_json = {"message": str(exc)}
-        run.status = "failed"
-        run.finished_at = _now()
-        session.commit()
+        fail_workflow_step(session, step, run, exc)
         raise
 
     return str(run.id)

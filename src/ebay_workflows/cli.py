@@ -10,8 +10,8 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy.exc import OperationalError
 
+from .cli_context import cli_engine, cli_session, load_settings
 from .config import Settings
-from .db import build_engine, build_session_factory
 from .hardening import run_data_integrity_checks
 from .integrations.cardmarket import load_cardmarket_bulk_rows
 from .integrations.cardmarket_bulk import download_and_build_singles_csv
@@ -45,6 +45,19 @@ from .workflow_phase6 import run_phase6_bulk_lot_detection
 
 app = typer.Typer(help="EbayWorkflows local CLI.")
 console = Console()
+
+
+@app.callback()
+def _bootstrap(
+    log_level: str | None = typer.Option(
+        None,
+        envvar="LOG_LEVEL",
+        help="Log level (debug, info, warning, error).",
+    ),
+) -> None:
+    from .logging_config import configure_logging
+
+    configure_logging(log_level or "info")
 
 _ENV_OVERRIDE_KEYS = (
     "EBAY_CLIENT_ID",
@@ -161,8 +174,7 @@ def validate_env() -> None:
     console.print(table)
 
     try:
-        session_factory = build_session_factory(settings)
-        with session_factory() as session:
+        with cli_session(action="load settings", settings=settings) as (_, session):
             health = collect_operational_health(session, settings)
         match_stats = health.get("match_stats") or {}
         if match_stats:
@@ -255,11 +267,7 @@ def run_workflow(
     ),
 ) -> None:
     """Run Milestone 1 Phase 1 ingestion workflow."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start workflow:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
+    settings = load_settings(action="start workflow")
 
     if not settings.enable_provider_policy_checks:
         console.print("[bold red]Policy checks must be enabled to run workflows.[/bold red]")
@@ -275,8 +283,7 @@ def run_workflow(
     pages = resolve_max_pages(max_pages, settings)
     console.print(f"Fetching up to [cyan]{pages}[/cyan] pages ({settings.ebay_page_size} items/page).")
 
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start workflow", settings=settings) as (_, session):
         run_id = run_phase1(
             session=session,
             settings=settings,
@@ -293,11 +300,7 @@ def run_workflow(
 @app.command("ebay-auth-check")
 def ebay_auth_check() -> None:
     """Verify eBay OAuth credentials without running ingestion."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot verify eBay auth:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
+    settings = load_settings(action="verify eBay auth")
 
     try:
         token = verify_ebay_credentials(settings)
@@ -313,19 +316,13 @@ def ebay_auth_check() -> None:
 @app.command("init-db")
 def init_db() -> None:
     """Create database tables for workflow storage."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot initialize DB:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    engine = build_engine(settings)
-    try:
-        Base.metadata.create_all(engine)
-        indexes = ensure_performance_indexes(engine)
-    except OperationalError as exc:
-        console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
-        raise typer.Exit(code=5) from exc
+    with cli_engine(action="initialize DB") as (_, engine):
+        try:
+            Base.metadata.create_all(engine)
+            indexes = ensure_performance_indexes(engine)
+        except OperationalError as exc:
+            console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
+            raise typer.Exit(code=5) from exc
     console.print("[bold green]Database schema initialized.[/bold green]")
     if indexes:
         console.print(f"Performance indexes ensured ({len(indexes)}).")
@@ -334,32 +331,19 @@ def init_db() -> None:
 @app.command("ensure-db-indexes")
 def ensure_db_indexes() -> None:
     """Create idempotent performance indexes on an existing database."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot ensure indexes:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    engine = build_engine(settings)
-    try:
-        indexes = ensure_performance_indexes(engine)
-    except OperationalError as exc:
-        console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
-        raise typer.Exit(code=5) from exc
+    with cli_engine(action="ensure indexes") as (_, engine):
+        try:
+            indexes = ensure_performance_indexes(engine)
+        except OperationalError as exc:
+            console.print(f"[bold red]Database connection failed:[/bold red] {exc}")
+            raise typer.Exit(code=5) from exc
     console.print(f"[bold green]Performance indexes ensured ({len(indexes)}).[/bold green]")
 
 
 @app.command("retry-failed-images")
 def retry_failed_images_cmd() -> None:
     """Re-download listing images that are failed or still pending from Phase 1."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot retry images:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="retry images") as (settings, session):
         metrics = retry_failed_image_downloads(session, settings)
 
     table = Table(title="Image Retry Summary")
@@ -373,15 +357,9 @@ def retry_failed_images_cmd() -> None:
 @app.command("sync-scryfall")
 def sync_scryfall() -> None:
     """Download and cache Scryfall bulk card data, then upsert DB records."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot sync Scryfall:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
+    settings = load_settings(action="sync Scryfall")
     cards = sync_scryfall_bulk(settings)
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="sync Scryfall", settings=settings) as (_, session):
         count = upsert_scryfall_cards(session, cards)
     console.print(f"[bold green]Scryfall sync complete.[/bold green] Loaded [cyan]{count}[/cyan] cards.")
 
@@ -389,14 +367,7 @@ def sync_scryfall() -> None:
 @app.command("build-set-symbol-templates")
 def build_set_symbol_templates_cmd() -> None:
     """Build set-symbol template images from Scryfall reference art (one per set)."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot build set symbol templates:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="build set symbol templates") as (settings, session):
         metrics = build_set_symbol_templates(session, settings)
 
     table = Table(title="Set Symbol Templates")
@@ -424,15 +395,9 @@ def build_faiss_index_cmd(
     ),
 ) -> None:
     """Build OpenCLIP + FAISS index from Scryfall card art."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot build FAISS index:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
+    settings = load_settings(action="build FAISS index")
     limit = max_cards if max_cards is not None else settings.faiss_build_max_cards
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="build FAISS index", settings=settings) as (_, session):
         if append:
             summary = append_faiss_batch(session, settings, batch_size=limit)
         else:
@@ -461,15 +426,9 @@ def build_faiss_index_batches_cmd(
     ),
 ) -> None:
     """Append FAISS batches until all Scryfall art cards are indexed."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot build FAISS batches:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
+    settings = load_settings(action="build FAISS batches")
     batch = batch_size if batch_size is not None else settings.faiss_build_max_cards
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="build FAISS batches", settings=settings) as (_, session):
         already = len(indexed_scryfall_ids(settings.faiss_index_path))
         total = count_indexable_art_cards(session)
         console.print(
@@ -500,14 +459,7 @@ def phase2_match_title(
     top_k: int = typer.Option(3, "--top-k", help="Top candidate cards retained per listing"),
 ) -> None:
     """Run Milestone 2 title-based listing to Scryfall matching."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start Phase 2:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start Phase 2") as (settings, session):
         # Ensure local cache is present and structured before matching.
         load_cards_from_cache(settings)
         run_id = run_phase2_title_match(session, settings=settings, top_k=top_k)
@@ -558,15 +510,9 @@ def download_cardmarket_bulk(
 @app.command("sync-cardmarket")
 def sync_cardmarket() -> None:
     """Load Cardmarket bulk pricing file into card_prices table."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot sync Cardmarket:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
+    settings = load_settings(action="sync Cardmarket")
     load_cardmarket_bulk_rows(settings.cardmarket_bulk_file_path)
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="sync Cardmarket", settings=settings) as (_, session):
         count = sync_cardmarket_prices(session, settings)
     console.print(f"[bold green]Cardmarket sync complete.[/bold green] Loaded [cyan]{count}[/cyan] prices.")
 
@@ -574,14 +520,7 @@ def sync_cardmarket() -> None:
 @app.command("phase3-join-prices")
 def phase3_join_prices() -> None:
     """Run Milestone 3 Cardmarket price join for matched candidates."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start Phase 3:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start Phase 3") as (settings, session):
         run_id = run_phase3_join(session, settings)
     console.print("[bold green]Phase 3 price join completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
@@ -596,14 +535,7 @@ def phase4_rank(
     ),
 ) -> None:
     """Run Milestone 4 EV/confidence scoring and ranking."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start Phase 4:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start Phase 4") as (settings, session):
         run_id = run_phase4_ranking(session, settings, use_hybrid=hybrid)
     console.print("[bold green]Phase 4 ranking completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
@@ -620,14 +552,7 @@ def export_rankings(
     ),
 ) -> None:
     """Export ranked listings as a Rich table and optional JSON file."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot export rankings:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="export rankings") as (_, session):
         rows = fetch_ranked_listings(session, limit=limit)
 
     if not rows:
@@ -678,14 +603,7 @@ def phase5_verify_ocr(
     ),
 ) -> None:
     """Run Milestone 5 OCR verification to refine candidate confidence."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start Phase 5:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start Phase 5") as (settings, session):
         run_id = run_phase5_ocr_verification(
             session,
             settings,
@@ -711,14 +629,7 @@ def phase6_detect_lots(
     ),
 ) -> None:
     """Run Milestone 6 bulk-lot multi-card detection and EV adjustment."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start Phase 6:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start Phase 6") as (settings, session):
         run_id = run_phase6_bulk_lot_detection(
             session,
             settings,
@@ -735,14 +646,8 @@ def clear_match_data(
     keep_exports: bool = typer.Option(False, "--keep-exports", help="Do not delete ranked export JSON files"),
 ) -> None:
     """Delete title/image match artifacts and scores; keep listings, images, Scryfall, and prices."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot clear match data:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    settings = load_settings(action="clear match data")
+    with cli_session(action="clear match data", settings=settings) as (_, session):
         before = count_matching_artifacts(session)
 
     table = Table(title="Match data to delete")
@@ -760,7 +665,7 @@ def clear_match_data(
         console.print("[yellow]Aborted.[/yellow]")
         raise typer.Exit(code=1)
 
-    with session_factory() as session:
+    with cli_session(action="clear match data", settings=settings) as (_, session):
         report = clear_matching_artifacts(
             session,
             export_dir=None if keep_exports else "./data/exports",
@@ -785,14 +690,7 @@ def clear_match_data(
 @app.command("match-stats")
 def match_stats() -> None:
     """Print verification and ranking counts from the current database."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="load settings") as (_, session):
         stats = collect_match_stats(session)
 
     table = Table(title="Match Statistics")
@@ -822,14 +720,7 @@ def match_stats() -> None:
 @app.command("monitor-pipeline")
 def monitor_pipeline() -> None:
     """Print read-only pipeline table counts (listings, images, OCR, match stats)."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="load settings") as (_, session):
         stats = collect_pipeline_progress(session)
 
     table = Table(title="Pipeline Progress")
@@ -854,14 +745,8 @@ def monitor_pipeline() -> None:
 @app.command("list-stale-workflows")
 def list_stale_workflows() -> None:
     """List workflow_steps stuck in running (live vs stale)."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    settings = load_settings(action="load settings")
+    with cli_session(action="load settings", settings=settings) as (_, session):
         views = list_running_workflow_views(
             session,
             local_job_id=None,
@@ -896,14 +781,8 @@ def clear_stale_workflows_cmd(
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
 ) -> None:
     """Mark stale running workflow steps as failed (unblocks pipeline mutex)."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    settings = load_settings(action="load settings")
+    with cli_session(action="load settings", settings=settings) as (_, session):
         views = list_running_workflow_views(
             session,
             local_job_id=None,
@@ -931,14 +810,7 @@ def clear_stale_workflows_cmd(
 @app.command("data-integrity-check")
 def data_integrity_check() -> None:
     """Run post-MVP data integrity checks for pipeline hardening."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot run integrity checks:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
-
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="run integrity checks") as (_, session):
         report = run_data_integrity_checks(session)
 
     if report.issues_found:
@@ -1004,11 +876,7 @@ def run_resumable_pipeline_cmd(
     ),
 ) -> None:
     """Run phases 1-6 with replay/resume safety and phase skipping."""
-    try:
-        settings = Settings()
-    except (ValidationError, ValueError) as exc:
-        console.print(f"[bold red]Cannot start resumable pipeline:[/bold red] {exc}")
-        raise typer.Exit(code=2) from exc
+    settings = load_settings(action="start resumable pipeline")
 
     pages = resolve_max_pages(max_pages, settings)
     cfg = ResumablePipelineConfig(
@@ -1026,8 +894,7 @@ def run_resumable_pipeline_cmd(
         resume=resume,
     )
 
-    session_factory = build_session_factory(settings)
-    with session_factory() as session:
+    with cli_session(action="start resumable pipeline", settings=settings) as (_, session):
         summary = run_resumable_pipeline(session, settings, cfg)
 
     table = Table(title="Resumable Pipeline Result")

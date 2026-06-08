@@ -11,16 +11,23 @@ from sqlalchemy.orm import Session
 from ..models import Listing, ListingFavorite, ListingImage, ListingScore, WorkflowRun, WorkflowStep
 from ..services.progress_report import ProgressSnapshot
 from ..services.workflow_progress import progress_from_step_metrics
+from ..workflow_steps import job_id_for_step
 from .progress_estimates import poll_job_progress
 
-STEP_TO_JOB: dict[str, str] = {
-    "phase1_ingest": "phase1",
-    "phase2_title_match": "phase2",
-    "phase3_cardmarket_join": "phase3",
-    "phase4_ev_ranking": "phase4",
-    "phase5_ocr_verification": "phase5",
-    "phase6_bulk_lot_detection": "phase6",
-}
+__all__ = [
+    "ActiveWorkflow",
+    "DashboardStats",
+    "elapsed_label",
+    "elapsed_label_from_seconds",
+    "fetch_active_workflow",
+    "fetch_dashboard_stats",
+    "fetch_recent_steps",
+    "fetch_running_workflows",
+    "job_id_for_step",
+    "resolve_progress",
+    "workflow_control_flags",
+    "workflow_source_label",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +40,6 @@ class ActiveWorkflow:
     @property
     def step_label(self) -> str:
         return self.step.step_name
-
-
-def job_id_for_step(step_name: str) -> str:
-    return STEP_TO_JOB.get(step_name, step_name)
 
 
 @dataclass(frozen=True, slots=True)

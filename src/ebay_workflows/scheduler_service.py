@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from datetime import datetime, time, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .cli_launch import project_root, resolve_cli_launch
-from .gui.workflow_catalog import WORKFLOW_JOBS, build_argv
+from .gui.workflow_catalog import WORKFLOW_JOBS
 from .models import ScheduledJob, WorkflowStep
+from .services.detached_jobs import spawn_cli_job_detached
 
 
 def workflow_is_running(session: Session) -> bool:
@@ -93,22 +92,12 @@ def record_schedule_dispatch(session: Session, job: ScheduledJob, *, status: str
     refresh_next_run_at(session, job, after=now)
 
 
-def spawn_cli_job_detached(job_id: str, params: dict[str, Any] | None = None) -> None:
-    if job_id not in WORKFLOW_JOBS:
-        raise ValueError(f"Unknown job_id: {job_id}")
-    argv = build_argv(job_id, params or {})
-    program, args = resolve_cli_launch(argv)
-    kwargs: dict[str, Any] = {
-        "cwd": str(project_root()),
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-    }
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-    subprocess.Popen([program, *args], **kwargs)
-
-
-def try_dispatch_one_due(session: Session, *, use_gui_runner: Any | None = None) -> ScheduledJob | None:
+def try_dispatch_one_due(
+    session: Session,
+    *,
+    use_gui_runner: Any | None = None,
+    log_dir: str | Path | None = None,
+) -> ScheduledJob | None:
     """Dispatch at most one due schedule. Returns the row dispatched, if any."""
     if workflow_is_running(session):
         return None
@@ -124,7 +113,7 @@ def try_dispatch_one_due(session: Session, *, use_gui_runner: Any | None = None)
     if use_gui_runner is not None:
         use_gui_runner.start(job.job_id, params)
     else:
-        spawn_cli_job_detached(job.job_id, params)
+        spawn_cli_job_detached(job.job_id, params, log_dir=log_dir)
     record_schedule_dispatch(session, job)
     return job
 

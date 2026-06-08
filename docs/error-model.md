@@ -31,10 +31,13 @@
 ## CLI Exit Codes
 
 - `0`: success
+- `1`: user aborted (confirmation declined)
 - `2`: configuration/validation failure
-- `3`: authentication/authorization failure
+- `3`: authentication/authorization failure, or no ranked listings to export
 - `4`: unrecoverable provider or policy violation
-- `5`: workflow execution failure
+- `5`: workflow execution failure (including database connection errors on init)
+- `6`: data integrity check failure
+- `7`: eBay OAuth authentication failure
 
 ## Compliance-Specific Behavior
 
