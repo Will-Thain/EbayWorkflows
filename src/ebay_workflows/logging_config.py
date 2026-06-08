@@ -8,7 +8,7 @@ import structlog
 
 def configure_logging(level: str = "info") -> None:
     """Configure structlog + stdlib logging for CLI, GUI, and background jobs."""
-    log_level = getattr(logging, level.lower(), logging.INFO)
+    log_level = getattr(logging, level.upper(), logging.INFO)
 
     structlog.configure(
         processors=[

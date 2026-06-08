@@ -38,3 +38,17 @@ def test_manifest_paths_are_relative_under_fixtures() -> None:
         rel = Path(entry["path"])
         assert not rel.is_absolute()
         assert ".." not in rel.parts
+
+
+def test_schema_declares_required_top_level_fields() -> None:
+    assert SCHEMA["required"] == ["version", "entries"]
+    entry_schema = SCHEMA["properties"]["entries"]["items"]
+    assert entry_schema["required"] == ["id", "path", "verify_expect"]
+    assert entry_schema["properties"]["verify_expect"]["enum"] == ["pass", "fail"]
+    assert entry_schema["additionalProperties"] is False
+
+
+def test_example_entries_have_unique_ids() -> None:
+    manifest = json.loads((FIXTURES / "manifest.example.json").read_text(encoding="utf-8"))
+    ids = [entry["id"] for entry in manifest["entries"]]
+    assert len(ids) == len(set(ids))
