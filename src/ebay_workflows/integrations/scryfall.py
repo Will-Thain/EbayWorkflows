@@ -56,7 +56,7 @@ def _download_bulk(url: str, *, requests_per_minute: int) -> list[dict[str, Any]
 
 
 def sync_scryfall_bulk(settings: Settings) -> list[dict[str, Any]]:
-    rpm = min(settings.scryfall_requests_per_minute, settings.global_requests_per_minute_cap)
+    rpm = settings.global_requests_per_minute_cap
     cards = _download_bulk(settings.scryfall_bulk_uri, requests_per_minute=rpm)
     out_path = Path(settings.scryfall_bulk_cache_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

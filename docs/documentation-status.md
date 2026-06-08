@@ -41,7 +41,7 @@ When a line mixes shipped and planned parts, tag each clause: e.g. “FAISS corr
 | `adr/0001-tech-stack.md` | **[Shipped]** | Stack + `mtg_card_recognition` |
 | `README.md` (this folder) | **[Shipped]** | Doc map + tag legend pointer |
 | `packages/mtg-card-recognition/README.md` | Mixed | Shipped API; future standalone repo |
-| `open-items-status.md` | **[Shipped]** | P1–P4 backlog tracker with latest pipeline snapshot |
+| `open-items-status.md` | **[Shipped]** | P1–P4 tracker, reanalyze checklist, deferred backlog |
 
 ## Intentionally not “final” (by design)
 

@@ -1,3 +1,10 @@
+"""Operator debug helper: step through phase4 imports on CPU with a trace log.
+
+Not used in CI or scheduled runs. Writes to data/exports/finish-debug.log.
+See runbook-local.md §17f.
+"""
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path

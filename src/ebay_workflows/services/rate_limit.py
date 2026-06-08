@@ -5,7 +5,7 @@ import time
 
 
 class GlobalRateLimiter:
-    """Thread-safe minimum interval between outbound HTTP calls (CDN / art downloads)."""
+    """Thread-safe minimum interval between all outbound HTTP calls."""
 
     def __init__(self, requests_per_minute: int) -> None:
         self._interval = 60.0 / max(requests_per_minute, 1)

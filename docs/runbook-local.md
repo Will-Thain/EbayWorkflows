@@ -28,6 +28,9 @@
    - set `EBAY_USE_SANDBOX=true` to use sandbox credentials (not Cert ID)
 7. run a dry-run workflow command to validate integration configuration
 7. initialize schema with `ebay-workflows init-db`
+7b. on an existing DB created before Alembic was added, stamp the baseline (does not run DDL):
+   `alembic stamp head`
+   - future schema changes should add revisions under `alembic/versions/` instead of relying on `create_all` alone
 8. set `DISABLE_LIVE_API_WRITES=false` in `.env` for local persistence tests
 9. run Phase 1 locally with mock data:
    `ebay-workflows run --query "mtg lot" --no-dry-run --mock-input-file "samples/mock_listings.json"`
@@ -80,6 +83,13 @@
    - **finish ranking only** (reuse Phase 5/3, skip Phase 6): `./scripts/finish-ranking.ps1`
    - post-run validation: `./scripts/post-reanalyze-validation.ps1`
    - backlog tracker: `docs/open-items-status.md`
+17f. **debug phase4 hang** (operator only, not CI):
+   `python scripts/finish_ranking_debug.py`
+   - writes step trace to `data/exports/finish-debug.log`
+   - use when `finish-ranking.ps1` or phase4 appears stuck on model/settings import
+17g. **after reanalyze completes** — validation and snapshot update:
+   `./scripts/post-reanalyze-validation.ps1`
+   - then update pipeline metrics in `docs/open-items-status.md` (see “After reanalyze completes” checklist)
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:

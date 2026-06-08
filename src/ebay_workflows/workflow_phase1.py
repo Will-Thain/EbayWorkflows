@@ -92,7 +92,7 @@ def _download_image_batch(
         settings.image_cache_dir,
         settings.image_download_timeout_ms,
         max_workers=settings.pipeline_max_download_workers,
-        requests_per_minute=settings.image_download_requests_per_minute,
+        global_requests_per_minute=settings.global_requests_per_minute_cap,
     )
     downloaded = 0
     for img, url in pending:

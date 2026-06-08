@@ -7,12 +7,13 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
-def _download_bytes(url: str, timeout_ms: int, *, requests_per_minute: int | None = None) -> bytes:
-    if requests_per_minute:
-        from .rate_limit import get_global_rate_limiter
+from .rate_limit import wait_global_http
 
-        get_global_rate_limiter(requests_per_minute).wait()
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
+def _download_bytes(url: str, timeout_ms: int, *, global_requests_per_minute: int | None = None) -> bytes:
+    if global_requests_per_minute:
+        wait_global_http(global_requests_per_minute)
     with httpx.Client(timeout=timeout_ms / 1000) as client:
         response = client.get(url)
         response.raise_for_status()
@@ -24,9 +25,9 @@ def download_to_cache(
     cache_dir: str,
     timeout_ms: int,
     *,
-    requests_per_minute: int | None = None,
+    global_requests_per_minute: int | None = None,
 ) -> tuple[str, str]:
-    data = _download_bytes(url, timeout_ms, requests_per_minute=requests_per_minute)
+    data = _download_bytes(url, timeout_ms, global_requests_per_minute=global_requests_per_minute)
     content_hash = hashlib.sha256(data).hexdigest()
     ext = Path(url).suffix or ".jpg"
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
@@ -41,7 +42,7 @@ def download_many_to_cache(
     timeout_ms: int,
     *,
     max_workers: int = 8,
-    requests_per_minute: int | None = None,
+    global_requests_per_minute: int | None = None,
 ) -> dict[str, tuple[str, str] | Exception]:
     """Download many image URLs in parallel; returns url -> (path, hash) or error."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -56,7 +57,7 @@ def download_many_to_cache(
     def _one(url: str) -> tuple[str, tuple[str, str] | Exception]:
         try:
             return url, download_to_cache(
-                url, cache_dir, timeout_ms, requests_per_minute=requests_per_minute
+                url, cache_dir, timeout_ms, global_requests_per_minute=global_requests_per_minute
             )
         except Exception as exc:  # noqa: BLE001
             return url, exc

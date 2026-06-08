@@ -124,10 +124,7 @@ def download_cardmarket_bulk(
             cache_dir=cache_dir,
             price_field=price_field,
             force_download=force,
-            requests_per_minute=min(
-                settings.scryfall_requests_per_minute,
-                settings.global_requests_per_minute_cap,
-            ),
+            requests_per_minute=settings.global_requests_per_minute_cap,
         )
     except (EbayWorkflowsError, httpx.HTTPError, ValueError, OSError) as exc:
         console.print(f"[bold red]Cardmarket download failed:[/bold red] {exc}")
