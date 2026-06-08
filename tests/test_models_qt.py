@@ -37,6 +37,6 @@ def test_ranked_table_model_display() -> None:
     model.set_rows([_sample_row()])
 
     assert model.rowCount() == 1
-    assert model.columnCount() == 7
-    assert model.data(model.index(0, 5)) == "★"
+    assert model.columnCount() == 8
+    assert model.data(model.index(0, 6)) == "★"
     assert model.data(model.index(0, 0), Qt.ItemDataRole.UserRole) == "id-1"

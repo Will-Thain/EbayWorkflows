@@ -8,12 +8,15 @@ from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from .exceptions import EbayWorkflowsError
 from .models import WorkflowRun, WorkflowStep
 
 logger = structlog.get_logger(__name__)
 
 
 def error_category_for(exc: BaseException) -> str:
+    if isinstance(exc, EbayWorkflowsError):
+        return exc.category
     if isinstance(exc, ValidationError):
         return "ConfigurationError"
     if isinstance(exc, ValueError):

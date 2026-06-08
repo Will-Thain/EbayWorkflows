@@ -8,7 +8,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import Listing, ListingCardCandidate, ListingFavorite, ListingScore
+from ..models import Listing, ListingCardCandidate, ListingFavorite, ListingImage, ListingScore
+
+
+def _listing_thumbnail_path(listing: Listing) -> str | None:
+    images: list[ListingImage] = list(listing.images or [])
+    for image in images:
+        if image.download_status == "succeeded" and image.local_path:
+            path = Path(image.local_path)
+            if path.is_file():
+                return str(path)
+    return None
 
 
 @dataclass(slots=True)
@@ -31,6 +41,7 @@ class RankedListingRow:
     image_verification_source: str | None = None
     verification_detection_id: str | None = None
     verification_listing_image_id: str | None = None
+    thumbnail_local_path: str | None = None
     is_favorited: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -53,6 +64,7 @@ class RankedListingRow:
             "image_verification_source": self.image_verification_source,
             "verification_detection_id": self.verification_detection_id,
             "verification_listing_image_id": self.verification_listing_image_id,
+            "thumbnail_local_path": self.thumbnail_local_path,
             "is_favorited": self.is_favorited,
         }
 
@@ -68,6 +80,7 @@ def fetch_ranked_listings(
         .join(ListingScore, ListingScore.listing_id == Listing.id)
         .options(
             joinedload(Listing.score),
+            joinedload(Listing.images),
             joinedload(Listing.card_candidates).joinedload(ListingCardCandidate.scryfall_card),
         )
         .order_by(ListingScore.rank_value.desc())
@@ -128,6 +141,7 @@ def fetch_ranked_listings(
                 image_verification_source=verification_source,
                 verification_detection_id=verification_detection_id,
                 verification_listing_image_id=verification_listing_image_id,
+                thumbnail_local_path=_listing_thumbnail_path(listing),
                 is_favorited=listing.id in favorite_ids,
             )
         )

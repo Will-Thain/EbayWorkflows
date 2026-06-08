@@ -8,10 +8,21 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..config import Settings
+from ..exceptions import RateLimitError, TransientIntegrationError
+from .http_errors import raise_for_http_response
+
+SCRYFALL_PROVIDER = "Scryfall"
 
 
 @retry(
-    retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError)),
+    retry=retry_if_exception_type(
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            RateLimitError,
+            TransientIntegrationError,
+        )
+    ),
     stop=stop_after_attempt(4),
     wait=wait_exponential(multiplier=1, min=1, max=10),
     reraise=True,
@@ -19,7 +30,9 @@ from ..config import Settings
 def _download_bulk(url: str) -> list[dict[str, Any]]:
     with httpx.Client(timeout=90) as client:
         response = client.get(url)
-        response.raise_for_status()
+        if response.status_code == 429:
+            raise RateLimitError(f"{SCRYFALL_PROVIDER} HTTP 429: rate limited")
+        raise_for_http_response(response, provider=SCRYFALL_PROVIDER)
         payload = response.json()
         # Scryfall bulk-data endpoint returns metadata with download_uri.
         if isinstance(payload, dict):
@@ -27,7 +40,9 @@ def _download_bulk(url: str) -> list[dict[str, Any]]:
             if not download_uri:
                 raise ValueError("Scryfall bulk metadata missing download_uri.")
             bulk_response = client.get(download_uri)
-            bulk_response.raise_for_status()
+            if bulk_response.status_code == 429:
+                raise RateLimitError(f"{SCRYFALL_PROVIDER} HTTP 429: rate limited")
+            raise_for_http_response(bulk_response, provider=SCRYFALL_PROVIDER)
             cards_payload = bulk_response.json()
             if not isinstance(cards_payload, list):
                 raise ValueError("Scryfall downloaded bulk payload is not a list.")
