@@ -40,3 +40,4 @@ class RecognitionSettings:
     faiss_propose_candidates: bool = True
     title_match_prefilter_size: int = 512
     title_match_score_cutoff: float = 65.0
+    lot_crop_min_combined_confidence: float = 0.42

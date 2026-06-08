@@ -17,6 +17,53 @@ def _faiss_score_for_card(matches: list[Any], card_id: str) -> float | None:
     return None
 
 
+def _faiss_title_disagree(
+    *,
+    title_result: TitleMatchResult | None,
+    evidence: dict[str, Any],
+    settings: RecognitionSettings,
+) -> bool:
+    if title_result is None:
+        return False
+    faiss_top_id = evidence.get("faiss_top_scryfall_id")
+    if not faiss_top_id or faiss_top_id == title_result.card_id:
+        return False
+    faiss_top_score = float(evidence.get("faiss_top_score") or 0.0)
+    return faiss_top_score >= settings.image_evidence_min_faiss_score
+
+
+def _apply_lot_crop_confidence_floor(
+    *,
+    evidence: dict[str, Any],
+    title_result: TitleMatchResult | None,
+    chosen_card: Any,
+    chosen_score: float,
+    settings: RecognitionSettings,
+) -> tuple[Any | None, float, dict[str, Any]]:
+    """Reject weak lot crops when FAISS and fuzzy title disagree (future-pain-points §2.4)."""
+    if evidence.get("match_method") == "set_collector":
+        return chosen_card, chosen_score, evidence
+
+    min_floor = settings.lot_crop_min_combined_confidence
+    title_score = float(title_result.score) if title_result else 0.0
+    combined = title_score * chosen_score
+    evidence["lot_crop_combined_score"] = combined
+
+    if _faiss_title_disagree(title_result=title_result, evidence=evidence, settings=settings):
+        if evidence.get("faiss_override") or evidence.get("faiss_only_match"):
+            evidence["lot_crop_rejected"] = "faiss_title_disagreement"
+            return None, 0.0, evidence
+        if combined < min_floor:
+            evidence["lot_crop_rejected"] = "faiss_title_disagreement_low_combined"
+            return None, 0.0, evidence
+
+    if title_score > 0 and combined < min_floor:
+        evidence["lot_crop_rejected"] = "low_combined_confidence"
+        return None, 0.0, evidence
+
+    return chosen_card, chosen_score, evidence
+
+
 def resolve_lot_crop_match(
     *,
     ocr_title: str,
@@ -158,4 +205,10 @@ def resolve_lot_crop_match(
     elif evidence.get("faiss_override"):
         evidence["match_method"] = "faiss_override"
 
-    return chosen_card, chosen_score, evidence
+    return _apply_lot_crop_confidence_floor(
+        evidence=evidence,
+        title_result=title_result,
+        chosen_card=chosen_card,
+        chosen_score=chosen_score,
+        settings=settings,
+    )

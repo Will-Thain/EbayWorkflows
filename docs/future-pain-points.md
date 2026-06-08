@@ -129,8 +129,9 @@ PHASE1_REFRESH_AFTER_HOURS=24
 **Implemented (partial):**
 - Phase 6 uses `crop_match_allowed_for_pricing`, `resolve_lot_crop_match` (FAISS + set/collector), and `sanitize_unit_price` per crop.
 - `PHASE6_MIN_LOT_DETECTIONS` gates scoring.
+- `PHASE6_MIN_CROP_MATCH_CONFIDENCE` rejects lot crops when FAISS disagrees with fuzzy title (or combined title×score is below floor).
 
-**Future:** Reject lot items below combined confidence floor when FAISS disagrees with fuzzy title.
+**Future:** Expand labeled crop regression suite under `tests/fixtures/labeled_crops/`.
 
 ---
 

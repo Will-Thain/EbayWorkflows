@@ -28,6 +28,7 @@ from .services.embedding_index import (
 from .services.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
 from .services.health_checks import collect_operational_health
 from .services.match_stats import collect_match_stats
+from .services.pipeline_progress import collect_pipeline_progress
 from .services.ingest_helpers import max_listings_per_query, resolve_max_pages
 from .services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
 from .services.ranked_export import fetch_ranked_listings, write_ranked_json
@@ -814,6 +815,38 @@ def match_stats() -> None:
         console.print(src_table)
     else:
         console.print("[yellow]No verified candidates in database yet.[/yellow]")
+
+
+@app.command("monitor-pipeline")
+def monitor_pipeline() -> None:
+    """Print read-only pipeline table counts (listings, images, OCR, match stats)."""
+    try:
+        settings = Settings()
+    except (ValidationError, ValueError) as exc:
+        console.print(f"[bold red]Cannot load settings:[/bold red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    session_factory = build_session_factory(settings)
+    with session_factory() as session:
+        stats = collect_pipeline_progress(session)
+
+    table = Table(title="Pipeline Progress")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green", justify="right")
+    for key, label in (
+        ("total_listings", "Listings"),
+        ("listing_images", "Listing images"),
+        ("image_detections", "Image detections"),
+        ("lot_detections", "Lot card detections"),
+        ("ocr_results", "OCR results"),
+        ("total_candidates", "Card candidates"),
+        ("verified_candidates", "Verified candidates"),
+        ("pricing_eligible_candidates", "Pricing-eligible candidates"),
+        ("scored_listings", "Scored listings"),
+        ("listings_with_positive_rank", "Listings rank_value > 0"),
+    ):
+        table.add_row(label, str(stats.get(key, 0)))
+    console.print(table)
 
 
 @app.command("data-integrity-check")

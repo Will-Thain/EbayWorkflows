@@ -84,17 +84,17 @@ class OngoingWorkflowCard(QFrame):
         layout.addWidget(self._progress_detail)
 
         actions = QHBoxLayout()
-        self._resume_btn = QPushButton("Start")
+        self._resume_btn = QPushButton("▶ Start")
         self._resume_btn.setToolTip("Resume a paused GUI workflow (Start)")
         self._resume_btn.clicked.connect(self.resume_requested.emit)
         actions.addWidget(self._resume_btn)
 
-        self._pause_btn = QPushButton("Pause")
+        self._pause_btn = QPushButton("⏸ Pause")
         self._pause_btn.setToolTip("Pause the GUI workflow process (Windows)")
         self._pause_btn.clicked.connect(self.pause_requested.emit)
         actions.addWidget(self._pause_btn)
 
-        self._stop_btn = QPushButton("Stop")
+        self._stop_btn = QPushButton("⏹ Stop")
         self._stop_btn.setToolTip("Stop the GUI workflow process")
         self._stop_btn.clicked.connect(self.stop_requested.emit)
         actions.addWidget(self._stop_btn)
@@ -151,6 +151,16 @@ class OngoingWorkflowCard(QFrame):
             self._stop_btn.setToolTip("Stop the GUI workflow process")
             self._pause_btn.setToolTip("Pause the GUI workflow process")
             self._resume_btn.setToolTip("Resume a paused GUI workflow")
+
+        paused = control_flags.get("can_resume", False)
+        if paused:
+            self.setStyleSheet(
+                "border: 2px solid palette(highlight);"
+                " background: palette(alternate-base);"
+                " border-radius: 6px;"
+            )
+        else:
+            self.setStyleSheet("")
 
 
 class DashboardTab(QWidget):

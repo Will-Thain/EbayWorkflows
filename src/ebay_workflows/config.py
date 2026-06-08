@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     phase6_min_lot_detections: int = Field(default=2, alias="PHASE6_MIN_LOT_DETECTIONS")
     phase6_max_lot_ev_multiple: float = Field(default=50.0, alias="PHASE6_MAX_LOT_EV_MULTIPLE")
     phase6_use_faiss_crop_match: bool = Field(default=True, alias="PHASE6_USE_FAISS_CROP_MATCH")
+    phase6_min_crop_match_confidence: float = Field(
+        default=0.42, alias="PHASE6_MIN_CROP_MATCH_CONFIDENCE"
+    )
     cardmarket_condition_multiplier_nm: float = Field(default=1.0, alias="CARDMARKET_CONDITION_MULTIPLIER_NM")
     cardmarket_condition_multiplier_lp: float = Field(default=0.85, alias="CARDMARKET_CONDITION_MULTIPLIER_LP")
     cardmarket_condition_multiplier_mp: float = Field(default=0.70, alias="CARDMARKET_CONDITION_MULTIPLIER_MP")
@@ -170,6 +173,9 @@ class Settings(BaseSettings):
 
         if not 0 < self.image_evidence_min_mana_confidence <= 1:
             raise ValueError("IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE must be > 0 and <= 1")
+
+        if not 0 < self.phase6_min_crop_match_confidence <= 1:
+            raise ValueError("PHASE6_MIN_CROP_MATCH_CONFIDENCE must be > 0 and <= 1")
 
         try:
             from .services.openclip_runtime import normalize_torch_device

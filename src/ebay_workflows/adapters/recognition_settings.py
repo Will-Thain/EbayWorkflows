@@ -36,6 +36,7 @@ def recognition_settings_from_app(settings: Settings) -> RecognitionSettings:
         faiss_propose_candidates=settings.faiss_propose_candidates,
         title_match_prefilter_size=settings.title_match_prefilter_size,
         title_match_score_cutoff=settings.title_match_score_cutoff,
+        lot_crop_min_combined_confidence=settings.phase6_min_crop_match_confidence,
     )
 
 
@@ -77,4 +78,7 @@ def coerce_recognition_settings(settings: Settings | RecognitionSettings) -> Rec
         faiss_propose_candidates=getattr(settings, "faiss_propose_candidates", True),
         title_match_prefilter_size=getattr(settings, "title_match_prefilter_size", 512),
         title_match_score_cutoff=getattr(settings, "title_match_score_cutoff", 65.0),
+        lot_crop_min_combined_confidence=getattr(
+            settings, "phase6_min_crop_match_confidence", 0.42
+        ),
     )

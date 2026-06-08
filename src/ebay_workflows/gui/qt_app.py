@@ -354,14 +354,17 @@ class WorkflowsTab(QWidget):
         run_layout.addLayout(params)
 
         buttons = QHBoxLayout()
-        self._start_btn = QPushButton("Start")
+        self._start_btn = QPushButton("▶ Start")
+        self._start_btn.setToolTip("Start the selected workflow job")
         self._start_btn.clicked.connect(self._start_job)
         buttons.addWidget(self._start_btn)
-        self._pause_btn = QPushButton("Pause")
+        self._pause_btn = QPushButton("⏸ Pause")
+        self._pause_btn.setToolTip("Pause or resume the running GUI workflow (Windows)")
         self._pause_btn.clicked.connect(self._toggle_pause)
         self._pause_btn.setEnabled(False)
         buttons.addWidget(self._pause_btn)
-        self._stop_btn = QPushButton("Stop")
+        self._stop_btn = QPushButton("⏹ Stop")
+        self._stop_btn.setToolTip("Stop the running GUI workflow")
         self._stop_btn.clicked.connect(self._runner.stop)
         self._stop_btn.setEnabled(False)
         buttons.addWidget(self._stop_btn)
@@ -463,29 +466,29 @@ class WorkflowsTab(QWidget):
         if external:
             self._start_btn.setEnabled(False)
             self._pause_btn.setEnabled(False)
-            self._pause_btn.setText("Pause")
+            self._pause_btn.setText("⏸ Pause")
             self._stop_btn.setEnabled(False)
             self._stop_btn.setToolTip(
                 "This job was started outside the GUI. Stop it from the terminal (Ctrl+C)."
             )
             return
 
-        self._stop_btn.setToolTip("")
+        self._stop_btn.setToolTip("Stop the running GUI workflow")
         if local_running:
             self._start_btn.setEnabled(False)
             self._stop_btn.setEnabled(True)
             if paused:
-                self._pause_btn.setText("Resume")
+                self._pause_btn.setText("▶ Resume")
                 self._pause_btn.setEnabled(pause_supported)
             else:
-                self._pause_btn.setText("Pause")
+                self._pause_btn.setText("⏸ Pause")
                 self._pause_btn.setEnabled(pause_supported)
             if not pause_supported:
                 self._pause_btn.setToolTip("Pause is only supported on Windows.")
         else:
             self._start_btn.setEnabled(True)
             self._pause_btn.setEnabled(False)
-            self._pause_btn.setText("Pause")
+            self._pause_btn.setText("⏸ Pause")
             self._stop_btn.setEnabled(False)
 
     def _on_job_paused(self, job_id: str) -> None:
