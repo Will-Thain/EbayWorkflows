@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide clear semantic definitions for key persisted fields and provenance requirements.
+Provide clear semantic definitions for key persisted fields and provenance requirements. Verification fields reflect **[Shipped]** consensus gate behavior; legacy OR-gate values are **[Historical]** — see `documentation-status.md`.
 
 ## Listings
 
@@ -20,13 +20,33 @@ Provide clear semantic definitions for key persisted fields and provenance requi
 
 ## Candidate Matching
 
-- `source_method`: origin of candidate (`title_match`, `ocr_match`, `image_model`)
+- `source_method`: origin of candidate (`title_match`, `faiss_proposal`, …)
 - `match_score`: normalized matching score for candidate ordering
 - `confidence_score`: confidence assigned to candidate
-- `embedding_model`: embedding model identifier/version used for retrieval
-- `embedding_similarity`: similarity from vector retrieval stage
-- `vector_index_version`: FAISS index snapshot/version identifier
-- `evidence_json`: structured trace of signals used to build candidate
+- `rank_position`: Phase 2 ordering (1 = best title match)
+- `evidence_json`: structured trace of signals used to build candidate (see below)
+
+### `evidence_json` — image verification (Phase 5)
+
+Set by `mtg_card_recognition.evidence` and Phase 5 attach logic:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `image_verified` | bool | Strict gate passed for this printing (at most one `true` per listing after Phase 5) |
+| `image_verification_source` | string \| null | `set_collector` or `set_symbol` when verified; null when gated |
+| `pricing_eligible` | bool | Whether Phase 3 may attach Cardmarket price |
+| `pricing_reject_reason` | string \| null | e.g. `no_image_reference`, `superseded_by_listing_winner` |
+| `verification_listing_image_id` | string (uuid) | Listing image that supplied the proving region |
+| `verification_detection_id` | string (uuid) | `image_detections.id` for the card_region row |
+| `verification_region_path` | string | Local path to the crop used as proof |
+| `zone_evidence` | object | Zone OCR, symbol, mana, `zones_available`, nested `listing_image_id` / `detection_id` |
+| `ocr_verification` | object | `ocr_title`, `similarity`, optional provenance sub-fields |
+| `faiss_matches` | array | Top-K FAISS hits (corroboration; does not alone verify) |
+| `faiss_score` | float | Score for this candidate's ID in region matches |
+| `cardmarket_price` | object | Attached in Phase 3 when allowed |
+| `cardmarket_price_rejected` | object | Reason price was dropped or superseded |
+
+Legacy / supporting fields may include `embedding_agreement`, `method`, `parsed_identifiers` (Phase 6 crops).
 
 ## OCR and Detection
 
@@ -46,6 +66,28 @@ Provide clear semantic definitions for key persisted fields and provenance requi
 - `rank_value`: final ranking score
 - `scoring_version`: scoring formula/config version
 - `explanation_json`: structured explanation payload for auditability
+
+## Listing Favourites (GUI)
+
+- `listing_id`: favourited listing (one row per listing)
+- `note`: optional operator comment (short text)
+- `favorited_at`: when the star was set
+
+## Scheduled Jobs (GUI / automation)
+
+- `name`: operator label for the schedule
+- `job_id`: workflow catalog key (`phase1`, `phase4`, …)
+- `job_params_json`: CLI parameters snapshot (query, max_pages, flags)
+- `schedule_type`: `interval`, `daily`, or `once`
+- `interval_hours`: hours between runs (interval type)
+- `daily_at`: wall-clock time for daily runs
+- `run_at`: absolute timestamp for one-shot runs
+- `timezone`: IANA timezone name for daily/once display
+- `enabled`: whether the schedule is active
+- `catch_up_missed`: run once after downtime if true; otherwise skip missed windows
+- `next_run_at` / `last_run_at`: scheduler bookkeeping (UTC)
+- `last_run_status`: `succeeded`, `failed`, `skipped_overlap`, `skipped_disabled`
+- `last_error`: short error message from last headless run
 
 ## Cardmarket Bulk Source Metadata (Recommended)
 

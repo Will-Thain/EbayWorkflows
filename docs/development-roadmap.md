@@ -1,5 +1,7 @@
 # Development Roadmap
 
+**Status:** Milestones 0–6 **[Shipped]**; Milestone 7 (package split) in progress. Tags: `documentation-status.md`.
+
 ## Delivery Strategy
 
 Implement in thin vertical slices so every milestone is runnable and testable from the CLI.
@@ -43,24 +45,47 @@ Exit criteria:
 Exit criteria:
 - ranked result set produced for a run
 
-## Milestone 4: Phase 5 OCR Verification
+## Milestone 4: Phase 5 OCR Verification **[Shipped]**
 
-- OpenCV preprocessing and card crop normalization
-- OCR extraction pipeline (`PaddleOCR` primary, `Tesseract` fallback)
-- OpenCLIP embedding generation + FAISS top-K candidate retrieval
-- confidence recalibration from image evidence
-
-Exit criteria:
-- OCR and image retrieval evidence improve or downgrade confidence predictably
-
-## Milestone 5: Phase 6 Bulk-Lot Detection
-
-- multi-card detection flow (`YOLOv8` or equivalent detector)
-- lot-level aggregation logic
-- false-positive suppression
+- OpenCV preprocessing, card alignment, zone strips
+- Tesseract zone OCR **[Shipped]**; PaddleOCR **[Future]**
+- OpenCLIP embedding + FAISS retrieval; optional `FAISS_PROPOSE_CANDIDATES`
+- **`mtg_card_recognition` strict consensus gate** — OCR/FAISS/mana never alone verify
+- provenance attach (`verification_*` fields); per-listing single verified winner
 
 Exit criteria:
-- bulk listings produce multi-card candidate sets with EV estimate
+- verified listings require set+collector + name/symbol consensus; pricing guardrails enforce sources
+
+## Milestone 5: Phase 6 Bulk-Lot Detection **[Shipped]**
+
+- OpenCV multi-card detection (contour-based; YOLO **[Future]**)
+- lot-level aggregation; `crop_match_allowed_for_pricing` under strict gate
+- false-positive suppression via detection score and min lot count
+
+Exit criteria:
+- bulk listings produce multi-card candidate sets with lot EV when crop evidence verifies
+
+## Milestone 6: Desktop GUI (PySide6) **[Shipped]**
+
+- Qt 6 main window: Home, Opportunities, Workflows, Database
+- favourites and ranked listing preview with cached images
+- verification provenance in match detail; proof detection highlight on image overlay
+- `QProcess` start/stop for CLI phases; schedule editor + `run-due-schedules`
+
+Exit criteria:
+- operator can review top listings, audit verification proof, and manage favourites without CLI
+- operator can start/stop phases and see logs in-app
+
+See `gui-application.md` and `gui-build-prerequisites.md`.
+
+## Milestone 7: Recognition package extraction **[Shipped]** (monorepo) / **[Future]** (standalone repo)
+
+- `src/mtg_card_recognition/` extractable library with P0 verification fixes
+- eBay shims + `RecognitionSettings` adapter
+- `packages/mtg-card-recognition/` packaging scaffold
+
+Exit criteria:
+- tests pass against package imports; standalone repo split per `packages/mtg-card-recognition/README.md` **[Future]**
 
 ## Testing Strategy
 
@@ -69,6 +94,8 @@ Exit criteria:
 - DB migration tests for schema integrity
 - workflow replay tests for idempotent reruns
 - evaluation set tests for OCR-only vs embedding-only vs hybrid matching
+- matching evaluation on post-consensus reanalyze (verified counts, EV sanity) **[Future]** validation pass — gate **[Shipped]** per `card-recognition-architecture.md`
+- PaddleOCR zones, Milo embedder, threshold calibration dataset **[Future]**
 
 ## Operational Checklist
 

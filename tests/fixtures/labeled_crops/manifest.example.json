@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "example-single-card-pass",
+      "path": "examples/minimal.png",
+      "expected_set": "lea",
+      "expected_collector": "161",
+      "expected_name": "Lightning Bolt",
+      "verify_expect": "pass",
+      "notes": "Minimal 1x1 PNG placeholder — replace with a real crop for recognition regression."
+    },
+    {
+      "id": "example-blurry-fail",
+      "path": "examples/.gitkeep",
+      "verify_expect": "fail",
+      "notes": "Strict gate should reject low-confidence OCR without corroboration."
+    }
+  ]
+}

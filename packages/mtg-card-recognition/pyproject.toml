@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mtg-card-recognition"
+version = "0.1.0"
+description = "MTG card zone extraction, image evidence gating, and embedding helpers."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+  "faiss-cpu",
+  "numpy",
+  "opencv-python",
+  "open-clip-torch",
+  "pytesseract",
+  "rapidfuzz",
+  "torch",
+]
+
+[project.optional-dependencies]
+gpu = ["torch-directml"]
+
+[tool.setuptools.packages.find]
+where = ["../../src"]
+include = ["mtg_card_recognition*"]

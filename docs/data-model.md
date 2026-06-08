@@ -1,5 +1,7 @@
 # Data Model (PostgreSQL)
 
+**Status:** Schema **[Shipped]**; Alembic migrations **[Future]** (use `ensure-db-indexes` interim). Verification fields in `evidence_json` match `data-dictionary.md`. Tags: `documentation-status.md`.
+
 This schema is optimized for workflow traceability, deterministic reruns, and scalable listing enrichment.
 
 ## Core Tables
@@ -77,7 +79,7 @@ Unique key:
 
 - `id` (uuid, pk)
 - `listing_id` (uuid, fk -> listings.id)
-- `source_method` (text: title_match/ocr_match/image_model)
+- `source_method` (text: `title_match` / `ocr_match` / `image_model` / `faiss_proposal` / lot crop methods)
 - `scryfall_id` (uuid, nullable)
 - `name_candidate` (text, nullable)
 - `set_code_candidate` (text, nullable)
@@ -85,7 +87,24 @@ Unique key:
 - `match_score` (numeric(5,4))
 - `confidence_score` (numeric(5,4))
 - `rank_position` (int)
-- `evidence_json` (jsonb)
+- `evidence_json` (jsonb) — see `data-dictionary.md` for verification and pricing fields
+
+### `evidence_json` — verification (Phase 5) **[Shipped]**
+
+Written by `mtg_card_recognition.evidence` attach logic. Key fields:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `image_verified` | bool | Strict gate passed; at most one `true` per listing after Phase 5 |
+| `image_verification_source` | text | `set_collector` or `set_symbol` when verified |
+| `pricing_eligible` | bool | Phase 3 may attach Cardmarket price |
+| `pricing_reject_reason` | text | e.g. `superseded_by_listing_winner` |
+| `verification_listing_image_id` | uuid | Proving listing image |
+| `verification_detection_id` | uuid | FK to `image_detections.id` |
+| `verification_region_path` | text | Local proof crop path |
+| `zone_evidence` | object | Zone OCR, symbol, mana, `zones_available` |
+
+Historical OR-gate values (OCR/FAISS/mana as `image_verification_source`) are **[Historical]** — do not restore.
 - `embedding_model` (text, nullable)
 - `embedding_similarity` (numeric(7,6), nullable)
 - `vector_index_version` (text, nullable)
@@ -152,6 +171,36 @@ Indexes:
 - `scoring_version` (text)
 - `explanation_json` (jsonb)
 - `updated_at` (timestamptz default now)
+
+## `listing_favorites` (GUI operator metadata)
+
+- `listing_id` (uuid, pk, fk -> listings.id, on delete cascade)
+- `note` (text, nullable)
+- `favorited_at` (timestamptz default now)
+
+Single-operator local use: one favourite row per listing. Used by the desktop app for starred listings and “favourites only” filters.
+
+## `scheduled_jobs` (GUI / scheduler automation)
+
+- `id` (uuid, pk)
+- `name` (text) — operator label, e.g. “Nightly ingest”
+- `job_id` (text) — key into workflow catalog (`phase1`, `phase4`, `pipeline`, …)
+- `job_params_json` (jsonb) — CLI args snapshot (query, max_pages, flags)
+- `schedule_type` (text: `interval` | `daily` | `once`)
+- `interval_hours` (numeric, nullable) — for `interval`, e.g. 24
+- `daily_at` (time, nullable) — local wall-clock time for `daily`
+- `run_at` (timestamptz, nullable) — for `once`
+- `timezone` (text, default operator TZ or `UTC`)
+- `enabled` (boolean, default true)
+- `catch_up_missed` (boolean, default false)
+- `next_run_at` (timestamptz, nullable)
+- `last_run_at` (timestamptz, nullable)
+- `last_run_status` (text, nullable: succeeded | failed | skipped_overlap | skipped_disabled)
+- `last_error` (text, nullable)
+- `created_at` / `updated_at` (timestamptz)
+
+Indexes:
+- btree (`enabled`, `next_run_at`) for due-job queries
 
 ## Data Retention and Lifecycle
 

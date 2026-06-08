@@ -29,13 +29,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+recognition = []
+gui = [
+  "pyside6>=6.6",
+]
 dev = [
   "pytest",
   "ruff",
 ]
+gpu = [
+  "torch-directml",
+]
 
 [project.scripts]
 ebay-workflows = "ebay_workflows.cli:app"
+ebay-workflows-gui = "ebay_workflows.gui.qt_app:main"
+ebay-workflows-run-due-schedules = "ebay_workflows.scheduler:run_due_schedules_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["ebay_workflows*", "mtg_card_recognition*"]

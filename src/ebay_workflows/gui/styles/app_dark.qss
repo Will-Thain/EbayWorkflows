@@ -1,0 +1,213 @@
+/* EbayWorkflows — operator dark theme (Fusion base) */
+
+QWidget {
+    color: #e5e7eb;
+    font-size: 13px;
+}
+
+QMainWindow, QTabWidget::pane {
+    background: #111827;
+}
+
+QTabWidget#mainTabs::pane {
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #111827;
+    top: -1px;
+}
+
+QTabWidget#mainTabs QTabBar::tab {
+    background: #1f2937;
+    color: #9ca3af;
+    border: 1px solid #374151;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 18px;
+    margin-right: 2px;
+    min-width: 80px;
+}
+
+QTabWidget#mainTabs QTabBar::tab:selected {
+    background: #1e293b;
+    color: #f9fafb;
+    font-weight: 600;
+    border-bottom: 2px solid #3b82f6;
+}
+
+QTabWidget QTabWidget::pane {
+    border: 1px solid #374151;
+    border-radius: 4px;
+    background: #1f2937;
+}
+
+QLabel#pageTitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: #f9fafb;
+}
+
+QLabel#pageSubtitle, QLabel#caption, QLabel#hintLabel {
+    color: #9ca3af;
+}
+
+QLabel#sectionTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f3f4f6;
+}
+
+QGroupBox {
+    border: 1px solid #374151;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    background: #1f2937;
+}
+
+QGroupBox::title {
+    color: #d1d5db;
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+}
+
+QPushButton {
+    background: #374151;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    padding: 6px 14px;
+}
+
+QPushButton#primaryButton {
+    background: #2563eb;
+    border-color: #1d4ed8;
+}
+
+QPushButton#secondaryButton {
+    background: #1f2937;
+}
+
+QPushButton#dangerButton {
+    background: #991b1b;
+    border-color: #7f1d1d;
+}
+
+QLineEdit, QSpinBox, QComboBox, QPlainTextEdit {
+    background: #111827;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+QTableView#dataTable {
+    background: #1f2937;
+    alternate-background-color: #111827;
+    gridline-color: #374151;
+    border: 1px solid #374151;
+    border-radius: 6px;
+}
+
+QHeaderView::section {
+    background: #111827;
+    color: #d1d5db;
+    padding: 8px 10px;
+    border: none;
+    border-bottom: 2px solid #374151;
+}
+
+QProgressBar {
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #111827;
+    text-align: center;
+    color: #e5e7eb;
+}
+
+QProgressBar::chunk {
+    background: #2563eb;
+    border-radius: 5px;
+}
+
+QStatusBar {
+    background: #1f2937;
+    color: #9ca3af;
+    border-top: 1px solid #374151;
+}
+
+QLabel#pollWarning {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+QPlainTextEdit#logPanel {
+    background: #0f172a;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+CardFrame, QWidget#statCard, QWidget#workflowCard {
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 8px;
+}
+
+QLabel#emptyState {
+    color: #6b7280;
+}
+
+QLabel#statusChip {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+QLabel#statusChip[chipState="live"] {
+    background: #064e3b;
+    color: #6ee7b7;
+}
+
+QLabel#statusChip[chipState="warming"] {
+    background: #78350f;
+    color: #fcd34d;
+}
+
+QLabel#statusChip[chipState="stale"] {
+    background: #7f1d1d;
+    color: #fca5a5;
+}
+
+QLabel#statusChip[chipState="paused"] {
+    background: #1e3a8a;
+    color: #93c5fd;
+}
+
+QLabel#statusChip[chipState="external"] {
+    background: #374151;
+    color: #d1d5db;
+}
+
+QFrame#workflowTile {
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 8px;
+}
+
+QFrame#workflowTile:hover {
+    border-color: #3b82f6;
+}
+
+QFrame#workflowTile[active="true"] {
+    border: 2px solid #2563eb;
+    background: #1e293b;
+}
+
+QLabel#imagePreview {
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+}

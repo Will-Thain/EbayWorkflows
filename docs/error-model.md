@@ -1,5 +1,7 @@
 # Error Model
 
+**Status:** Categories and exit codes **[Shipped]**. Tags: `documentation-status.md`.
+
 ## Error Categories
 
 - `ConfigurationError`: invalid or missing env/config values
@@ -11,6 +13,7 @@
 - `DataValidationError`: payload parse/contract mismatch
 - `DataSourceError`: missing/invalid Cardmarket bulk data file or provenance
 - `WorkflowExecutionError`: step-level orchestration failure
+- `VerificationGateError` (logical): candidate fails strict verify — recorded in `evidence_json.pricing_reject_reason`, not a CLI abort
 
 ## Retry Policy
 
@@ -28,10 +31,13 @@
 ## CLI Exit Codes
 
 - `0`: success
+- `1`: user aborted (confirmation declined)
 - `2`: configuration/validation failure
-- `3`: authentication/authorization failure
+- `3`: authentication/authorization failure, or no ranked listings to export
 - `4`: unrecoverable provider or policy violation
-- `5`: workflow execution failure
+- `5`: workflow execution failure (including database connection errors on init)
+- `6`: data integrity check failure
+- `7`: eBay OAuth authentication failure
 
 ## Compliance-Specific Behavior
 

@@ -3,14 +3,30 @@ from __future__ import annotations
 import base64
 import time
 from dataclasses import dataclass
+from typing import Iterator
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..config import Settings
+from ..exceptions import AuthenticationError, ConfigurationError, RateLimitError, TransientIntegrationError
+from ..services.ingest_helpers import EBAY_BROWSE_MAX_OFFSET
+from .http_errors import raise_for_http_response
 
-EBAY_OAUTH_URL = "https://api.ebay.com/identity/v1/oauth2/token"
-EBAY_BROWSE_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+EBAY_PROVIDER = "eBay"
+
+EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope"
+EBAY_API_HOSTS = {
+    "production": "https://api.ebay.com",
+    "sandbox": "https://api.sandbox.ebay.com",
+}
+
+
+def _api_hosts(settings: Settings) -> tuple[str, str]:
+    host = EBAY_API_HOSTS["sandbox" if settings.ebay_use_sandbox else "production"]
+    oauth_url = f"{host}/identity/v1/oauth2/token"
+    browse_search_url = f"{host}/buy/browse/v1/item_summary/search"
+    return oauth_url, browse_search_url
 
 
 @dataclass
@@ -39,7 +55,14 @@ class RateLimiter:
 
 
 @retry(
-    retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError)),
+    retry=retry_if_exception_type(
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            RateLimitError,
+            TransientIntegrationError,
+        )
+    ),
     stop=stop_after_attempt(4),
     wait=wait_exponential(multiplier=1, min=1, max=10),
     reraise=True,
@@ -57,31 +80,43 @@ def _request_with_retry(
     if response.status_code == 429:
         retry_after = int(response.headers.get("Retry-After", "1"))
         time.sleep(max(retry_after, 1))
-        response.raise_for_status()
-    response.raise_for_status()
+        raise RateLimitError(f"{EBAY_PROVIDER} HTTP 429: rate limited")
+    raise_for_http_response(response, provider=EBAY_PROVIDER)
     return response
 
 
 def _oauth_token(settings: Settings, client: httpx.Client, limiter: RateLimiter) -> str:
-    if not settings.ebay_client_id or not settings.ebay_client_secret:
-        raise ValueError("Missing eBay client credentials.")
-    basic = base64.b64encode(
-        f"{settings.ebay_client_id}:{settings.ebay_client_secret}".encode("utf-8")
-    ).decode("utf-8")
+    client_id = settings.resolved_ebay_client_id
+    client_secret = settings.resolved_ebay_client_secret
+    if not client_id or not client_secret:
+        raise ConfigurationError("Missing eBay client credentials for the active environment.")
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Authorization": f"Basic {basic}",
     }
+    oauth_url, _ = _api_hosts(settings)
     data = {
         "grant_type": "client_credentials",
-        "scope": "https://api.ebay.com/oauth/api_scope",
+        "scope": EBAY_OAUTH_SCOPE,
     }
     limiter.wait()
-    response = _request_with_retry(client, "POST", EBAY_OAUTH_URL, headers=headers, data=data)
+    response = client.post(oauth_url, headers=headers, data=data)
+    if not response.is_success:
+        if response.status_code in {401, 403}:
+            detail = response.text[:300]
+            env_label = "sandbox" if settings.ebay_use_sandbox else "production"
+            raise AuthenticationError(
+                f"eBay OAuth failed ({response.status_code}, {env_label}): {detail}. "
+                "Verify production (EBAY_CLIENT_ID/EBAY_CLIENT_SECRET) or sandbox "
+                "(EBAY_SANDBOX_CLIENT_ID/EBAY_SANDBOX_CLIENT_SECRET) credentials match EBAY_USE_SANDBOX "
+                "(App ID + Client Secret from Developer Portal keys, not Cert ID)."
+            )
+        raise_for_http_response(response, provider=EBAY_PROVIDER)
     payload = response.json()
     token = payload.get("access_token")
     if not token:
-        raise ValueError("eBay OAuth response did not include access_token.")
+        raise AuthenticationError("eBay OAuth response did not include access_token.")
     return token
 
 
@@ -118,16 +153,33 @@ def _extract_record(item: dict) -> ListingRecord:
     )
 
 
-def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[ListingRecord]:
+def verify_ebay_credentials(settings: Settings) -> str:
+    """Obtain an OAuth token to verify client ID/secret and environment selection."""
     if not settings.enable_ebay_api:
-        return []
+        raise ValueError("ENABLE_EBAY_API is false.")
+    if settings.ebay_requests_per_minute is None:
+        raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
+    limiter = RateLimiter(settings.ebay_requests_per_minute)
+    with httpx.Client(timeout=30) as client:
+        return _oauth_token(settings, client, limiter)
+
+
+def iter_listing_pages(
+    settings: Settings,
+    query: str,
+    max_pages: int,
+) -> Iterator[list[ListingRecord]]:
+    """Yield one page of listing records at a time (memory-safe for large ingests)."""
+    if not settings.enable_ebay_api:
+        return
     if settings.ebay_requests_per_minute is None:
         raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
 
     limiter = RateLimiter(settings.ebay_requests_per_minute)
-    records: list[ListingRecord] = []
     page_size = settings.ebay_page_size
     offset = 0
+
+    _, browse_search_url = _api_hosts(settings)
 
     with httpx.Client(timeout=30) as client:
         token = _oauth_token(settings, client, limiter)
@@ -137,11 +189,14 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
         }
 
         for _ in range(max_pages):
+            if offset >= EBAY_BROWSE_MAX_OFFSET:
+                break
+
             limiter.wait()
             response = _request_with_retry(
                 client,
                 "GET",
-                EBAY_BROWSE_SEARCH_URL,
+                browse_search_url,
                 headers=headers,
                 params={
                     "q": query,
@@ -154,14 +209,25 @@ def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[Listi
             if not items:
                 break
 
+            page_records: list[ListingRecord] = []
             for item in items:
                 record = _extract_record(item)
-                # Provider sometimes returns partial objects. Keep only usable rows.
                 if not record.external_listing_id or not record.title or not record.listing_url:
                     continue
-                records.append(record)
+                page_records.append(record)
 
+            if page_records:
+                yield page_records
+
+            total = payload.get("total")
             offset += page_size
+            if total is not None and offset >= int(total):
+                break
 
+
+def fetch_listings(settings: Settings, query: str, max_pages: int) -> list[ListingRecord]:
+    records: list[ListingRecord] = []
+    for page in iter_listing_pages(settings, query, max_pages):
+        records.extend(page)
     return records
 

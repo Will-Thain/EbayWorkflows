@@ -1,0 +1,16 @@
+[
+  {
+    "source_url": "https://example.com/images/card-front-1.jpg",
+    "title": "Lightning Bolt",
+    "set_code": "m11",
+    "collector_number": "146",
+    "confidence": 0.94
+  },
+  {
+    "source_url": "https://example.com/images/card-front-2.jpg",
+    "title": "Sol Ring",
+    "set_code": "cmr",
+    "collector_number": "333",
+    "confidence": 0.92
+  }
+]

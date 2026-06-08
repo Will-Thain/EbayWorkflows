@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Numeric, String, Text, Time, UniqueConstraint, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -65,6 +65,13 @@ class Listing(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     images: Mapped[list["ListingImage"]] = relationship(back_populates="listing", cascade="all,delete-orphan")
+    card_candidates: Mapped[list["ListingCardCandidate"]] = relationship(
+        back_populates="listing", cascade="all,delete-orphan"
+    )
+    score: Mapped["ListingScore | None"] = relationship(back_populates="listing", cascade="all,delete-orphan")
+    favorite: Mapped["ListingFavorite | None"] = relationship(
+        back_populates="listing", cascade="all,delete-orphan", uselist=False
+    )
 
 
 class ListingImage(Base):
@@ -81,4 +88,163 @@ class ListingImage(Base):
     error_json: Mapped[dict | None] = mapped_column(JSON)
 
     listing: Mapped[Listing] = relationship(back_populates="images")
+    detections: Mapped[list["ImageDetection"]] = relationship(back_populates="listing_image", cascade="all,delete-orphan")
+
+
+class ScryfallCard(Base):
+    __tablename__ = "scryfall_cards"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    oracle_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    set_code: Mapped[str | None] = mapped_column(String(16))
+    collector_number: Mapped[str | None] = mapped_column(String(32))
+    lang: Mapped[str | None] = mapped_column(String(12))
+    released_at: Mapped[str | None] = mapped_column(String(32))
+    image_normal: Mapped[str | None] = mapped_column(Text)
+    image_small: Mapped[str | None] = mapped_column(Text)
+    raw_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    prices: Mapped[list["CardPrice"]] = relationship(back_populates="scryfall_card", cascade="all,delete-orphan")
+
+
+class ListingCardCandidate(Base):
+    __tablename__ = "listing_card_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "listing_id",
+            "scryfall_id",
+            "source_method",
+            name="uq_listing_scryfall_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("listings.id"), nullable=False)
+    source_method: Mapped[str] = mapped_column(String(64), nullable=False, default="title_match")
+    scryfall_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("scryfall_cards.id"))
+    match_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    rank_position: Mapped[int] = mapped_column(nullable=False, default=1)
+    evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing: Mapped[Listing] = relationship(back_populates="card_candidates")
+    scryfall_card: Mapped[ScryfallCard | None] = relationship()
+
+
+class CardPrice(Base):
+    __tablename__ = "card_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "scryfall_id",
+            "price_type",
+            "condition",
+            "language",
+            "price_timestamp",
+            name="uq_card_price_snapshot",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="cardmarket")
+    scryfall_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("scryfall_cards.id"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="trend")
+    condition: Mapped[str | None] = mapped_column(String(32))
+    language: Mapped[str | None] = mapped_column(String(16))
+    price_amount: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    price_timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    scryfall_card: Mapped[ScryfallCard] = relationship(back_populates="prices")
+
+
+class ListingScore(Base):
+    __tablename__ = "listing_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("listings.id"), nullable=False, unique=True)
+    ev_raw: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    ev_adjusted: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    risk_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    rank_value: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    scoring_version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    explanation_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing: Mapped[Listing] = relationship(back_populates="score")
+
+
+class ImageDetection(Base):
+    __tablename__ = "image_detections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    listing_image_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("listing_images.id"), nullable=False)
+    detection_type: Mapped[str] = mapped_column(String(32), nullable=False, default="card_region")
+    bbox_x: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    bbox_y: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    bbox_w: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1)
+    bbox_h: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1)
+    detection_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False, default=1)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False, default="phase5_v1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing_image: Mapped[ListingImage] = relationship(back_populates="detections")
+    ocr_results: Mapped[list["OcrResult"]] = relationship(back_populates="detection", cascade="all,delete-orphan")
+
+
+class OcrResult(Base):
+    __tablename__ = "ocr_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    detection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("image_detections.id"), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str | None] = mapped_column(Text)
+    confidence_score: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False, default=0)
+    engine_name: Mapped[str] = mapped_column(String(64), nullable=False, default="pytesseract")
+    engine_version: Mapped[str | None] = mapped_column(String(64))
+    region_image_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    detection: Mapped[ImageDetection] = relationship(back_populates="ocr_results")
+
+
+class ListingFavorite(Base):
+    __tablename__ = "listing_favorites"
+
+    listing_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    favorited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    listing: Mapped[Listing] = relationship(back_populates="favorite")
+
+
+class ScheduledJob(Base):
+    __tablename__ = "scheduled_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    job_params_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    schedule_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    interval_hours: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    daily_at: Mapped[time | None] = mapped_column(Time)
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    catch_up_missed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_status: Mapped[str | None] = mapped_column(String(32))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
