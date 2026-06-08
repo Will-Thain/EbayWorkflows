@@ -18,6 +18,7 @@
 3. set required environment variables from `.env.example`
 4. run DB migrations
 5. run `ebay-workflows validate-env`
+   - includes **Match Statistics** (verified listings, pricing-eligible count) when DB is up
    - if warnings mention shell overrides, run `./scripts/clear-ebay-env-overrides.ps1` (stale `EBAY_*` env vars beat `.env`)
 6. verify eBay OAuth (production keys by default):
    `ebay-workflows ebay-auth-check`
