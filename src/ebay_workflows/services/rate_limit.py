@@ -30,3 +30,8 @@ def get_global_rate_limiter(requests_per_minute: int) -> GlobalRateLimiter:
         _limiter = GlobalRateLimiter(requests_per_minute)
         _limiter_rpm = requests_per_minute
     return _limiter
+
+
+def wait_global_http(requests_per_minute: int) -> None:
+    """Block until the shared outbound HTTP budget allows the next request."""
+    get_global_rate_limiter(requests_per_minute).wait()

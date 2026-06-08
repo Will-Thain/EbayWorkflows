@@ -11,6 +11,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from ..config import Settings
 from ..exceptions import AuthenticationError, ConfigurationError, RateLimitError, TransientIntegrationError
 from ..services.ingest_helpers import EBAY_BROWSE_MAX_OFFSET
+from ..services.rate_limit import wait_global_http
 from .http_errors import raise_for_http_response
 
 EBAY_PROVIDER = "eBay"
@@ -43,11 +44,14 @@ class ListingRecord:
 
 
 class RateLimiter:
-    def __init__(self, requests_per_minute: int):
+    def __init__(self, requests_per_minute: int, *, global_requests_per_minute: int | None = None):
         self._interval = 60.0 / requests_per_minute
         self._next_allowed_at = 0.0
+        self._global_rpm = global_requests_per_minute
 
     def wait(self) -> None:
+        if self._global_rpm:
+            wait_global_http(self._global_rpm)
         now = time.monotonic()
         if now < self._next_allowed_at:
             time.sleep(self._next_allowed_at - now)
@@ -153,13 +157,55 @@ def _extract_record(item: dict) -> ListingRecord:
     )
 
 
+def _ebay_limiter(settings: Settings) -> RateLimiter:
+    assert settings.ebay_requests_per_minute is not None
+    return RateLimiter(
+        settings.ebay_requests_per_minute,
+        global_requests_per_minute=settings.global_requests_per_minute_cap,
+    )
+
+
+def _browse_search_page(
+    client: httpx.Client,
+    *,
+    settings: Settings,
+    limiter: RateLimiter,
+    browse_search_url: str,
+    headers: dict[str, str],
+    params: dict[str, int | str],
+) -> tuple[httpx.Response, str]:
+    token = headers["Authorization"].removeprefix("Bearer ")
+    limiter.wait()
+    try:
+        response = _request_with_retry(
+            client,
+            "GET",
+            browse_search_url,
+            headers=headers,
+            params=params,
+        )
+        return response, token
+    except AuthenticationError:
+        token = _oauth_token(settings, client, limiter)
+        headers["Authorization"] = f"Bearer {token}"
+        limiter.wait()
+        response = _request_with_retry(
+            client,
+            "GET",
+            browse_search_url,
+            headers=headers,
+            params=params,
+        )
+        return response, token
+
+
 def verify_ebay_credentials(settings: Settings) -> str:
     """Obtain an OAuth token to verify client ID/secret and environment selection."""
     if not settings.enable_ebay_api:
         raise ValueError("ENABLE_EBAY_API is false.")
     if settings.ebay_requests_per_minute is None:
         raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
-    limiter = RateLimiter(settings.ebay_requests_per_minute)
+    limiter = _ebay_limiter(settings)
     with httpx.Client(timeout=30) as client:
         return _oauth_token(settings, client, limiter)
 
@@ -175,7 +221,7 @@ def iter_listing_pages(
     if settings.ebay_requests_per_minute is None:
         raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
 
-    limiter = RateLimiter(settings.ebay_requests_per_minute)
+    limiter = _ebay_limiter(settings)
     page_size = settings.ebay_page_size
     offset = 0
 
@@ -192,11 +238,11 @@ def iter_listing_pages(
             if offset >= EBAY_BROWSE_MAX_OFFSET:
                 break
 
-            limiter.wait()
-            response = _request_with_retry(
+            response, token = _browse_search_page(
                 client,
-                "GET",
-                browse_search_url,
+                settings=settings,
+                limiter=limiter,
+                browse_search_url=browse_search_url,
                 headers=headers,
                 params={
                     "q": query,
@@ -204,6 +250,7 @@ def iter_listing_pages(
                     "offset": offset,
                 },
             )
+            headers["Authorization"] = f"Bearer {token}"
             payload = response.json()
             items = payload.get("itemSummaries", [])
             if not items:

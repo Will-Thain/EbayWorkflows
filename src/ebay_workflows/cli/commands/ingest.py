@@ -6,6 +6,7 @@ from rich.table import Table
 
 from ebay_workflows.cli.bootstrap import app, console
 from ebay_workflows.cli_context import cli_session, load_settings
+from ebay_workflows.exceptions import EbayWorkflowsError
 
 from ebay_workflows.services.ingest_helpers import resolve_max_pages
 from ebay_workflows.workflow_phase1 import retry_failed_image_downloads, run_phase1
@@ -116,14 +117,19 @@ def download_cardmarket_bulk(
     force: bool = typer.Option(False, "--force", help="Re-download JSON even if cached"),
 ) -> None:
     """Download official Cardmarket MTG singles price guide and build normalized CSV."""
+    settings = load_settings(action="download Cardmarket bulk")
     try:
         meta = download_and_build_singles_csv(
             output,
             cache_dir=cache_dir,
             price_field=price_field,
             force_download=force,
+            requests_per_minute=min(
+                settings.scryfall_requests_per_minute,
+                settings.global_requests_per_minute_cap,
+            ),
         )
-    except (httpx.HTTPError, ValueError, OSError) as exc:
+    except (EbayWorkflowsError, httpx.HTTPError, ValueError, OSError) as exc:
         console.print(f"[bold red]Cardmarket download failed:[/bold red] {exc}")
         raise typer.Exit(code=2) from exc
 

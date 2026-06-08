@@ -1,4 +1,6 @@
-# Run after reanalyze-matching.ps1 completes — sanity-check pipeline output.
+# Re-run matching/scoring with fresh title matches and full image re-analysis.
+# Use after matching-logic changes without re-ingesting eBay listings.
+# Order: Phase 2 -> Phase 5 -> Phase 3 -> Phase 6 -> Phase 4
 Set-Location $PSScriptRoot/..
 
 . ./scripts/activate-dev.ps1
@@ -7,9 +9,15 @@ $ErrorActionPreference = "Stop"
 $cli = Join-Path (Get-Location) ".venv\Scripts\ebay-workflows.exe"
 if (-not (Test-Path $cli)) {
     $py = Join-Path (Get-Location) ".venv\Scripts\python.exe"
-    function Invoke-Cli { param([string[]]$CliArgs) & $py -m ebay_workflows.cli @CliArgs }
+    function Invoke-Cli {
+        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
+        & $py -m ebay_workflows.cli @CliArgs
+    }
 } else {
-    function Invoke-Cli { param([string[]]$CliArgs) & $cli @CliArgs }
+    function Invoke-Cli {
+        param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
+        & $cli @CliArgs
+    }
 }
 
 $exportPath = "./data/exports/ranked-validation.json"

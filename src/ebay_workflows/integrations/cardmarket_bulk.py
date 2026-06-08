@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from ..exceptions import RateLimitError, TransientIntegrationError
+from ..services.rate_limit import wait_global_http
+from .http_errors import raise_for_http_response
+
+CARDMARKET_PROVIDER = "Cardmarket"
 CARDMARKET_PRICE_GUIDE_URL = (
     "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_1.json"
 )
@@ -42,10 +48,32 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _download_json(client: httpx.Client, url: str, dest: Path) -> None:
+@retry(
+    retry=retry_if_exception_type(
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            RateLimitError,
+            TransientIntegrationError,
+        )
+    ),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    reraise=True,
+)
+def _download_json(
+    client: httpx.Client,
+    url: str,
+    dest: Path,
+    *,
+    requests_per_minute: int,
+) -> None:
+    wait_global_http(requests_per_minute)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with client.stream("GET", url, follow_redirects=True) as response:
-        response.raise_for_status()
+        if response.status_code == 429:
+            raise RateLimitError(f"{CARDMARKET_PROVIDER} HTTP 429: rate limited")
+        raise_for_http_response(response, provider=CARDMARKET_PROVIDER)
         dest.write_bytes(response.read())
 
 
@@ -64,6 +92,7 @@ def download_and_build_singles_csv(
     price_field: str = "trend",
     force_download: bool = False,
     timeout_seconds: float = 300.0,
+    requests_per_minute: int = 30,
 ) -> dict[str, Any]:
     """
     Download official Cardmarket MTG singles catalog + price guide (JSON) and
@@ -80,9 +109,19 @@ def download_and_build_singles_csv(
 
     with httpx.Client(timeout=timeout_seconds) as client:
         if force_download or not products_path.is_file():
-            _download_json(client, CARDMARKET_PRODUCTS_SINGLES_URL, products_path)
+            _download_json(
+                client,
+                CARDMARKET_PRODUCTS_SINGLES_URL,
+                products_path,
+                requests_per_minute=requests_per_minute,
+            )
         if force_download or not price_guide_path.is_file():
-            _download_json(client, CARDMARKET_PRICE_GUIDE_URL, price_guide_path)
+            _download_json(
+                client,
+                CARDMARKET_PRICE_GUIDE_URL,
+                price_guide_path,
+                requests_per_minute=requests_per_minute,
+            )
 
     products_payload = json.loads(products_path.read_text(encoding="utf-8"))
     price_payload = json.loads(price_guide_path.read_text(encoding="utf-8"))

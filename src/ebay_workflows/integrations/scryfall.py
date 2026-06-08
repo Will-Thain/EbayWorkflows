@@ -9,6 +9,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from ..config import Settings
 from ..exceptions import RateLimitError, TransientIntegrationError
+from ..services.rate_limit import wait_global_http
 from .http_errors import raise_for_http_response
 
 SCRYFALL_PROVIDER = "Scryfall"
@@ -27,8 +28,9 @@ SCRYFALL_PROVIDER = "Scryfall"
     wait=wait_exponential(multiplier=1, min=1, max=10),
     reraise=True,
 )
-def _download_bulk(url: str) -> list[dict[str, Any]]:
+def _download_bulk(url: str, *, requests_per_minute: int) -> list[dict[str, Any]]:
     with httpx.Client(timeout=90) as client:
+        wait_global_http(requests_per_minute)
         response = client.get(url)
         if response.status_code == 429:
             raise RateLimitError(f"{SCRYFALL_PROVIDER} HTTP 429: rate limited")
@@ -39,6 +41,7 @@ def _download_bulk(url: str) -> list[dict[str, Any]]:
             download_uri = payload.get("download_uri")
             if not download_uri:
                 raise ValueError("Scryfall bulk metadata missing download_uri.")
+            wait_global_http(requests_per_minute)
             bulk_response = client.get(download_uri)
             if bulk_response.status_code == 429:
                 raise RateLimitError(f"{SCRYFALL_PROVIDER} HTTP 429: rate limited")
@@ -53,7 +56,8 @@ def _download_bulk(url: str) -> list[dict[str, Any]]:
 
 
 def sync_scryfall_bulk(settings: Settings) -> list[dict[str, Any]]:
-    cards = _download_bulk(settings.scryfall_bulk_uri)
+    rpm = min(settings.scryfall_requests_per_minute, settings.global_requests_per_minute_cap)
+    cards = _download_bulk(settings.scryfall_bulk_uri, requests_per_minute=rpm)
     out_path = Path(settings.scryfall_bulk_cache_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(cards), encoding="utf-8")

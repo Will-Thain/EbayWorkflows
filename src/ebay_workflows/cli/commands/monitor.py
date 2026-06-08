@@ -196,3 +196,31 @@ def data_integrity_check() -> None:
     )
 
 
+@app.command("prune-image-cache")
+def prune_image_cache(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--execute",
+        help="Report orphan files without deleting (default) or remove them",
+    ),
+) -> None:
+    """Remove unreferenced listing image files from the cache root directory."""
+    from ebay_workflows.services.image_cache_prune import prune_unreferenced_listing_images
+
+    settings = load_settings(action="prune image cache")
+    with cli_session(action="prune image cache", settings=settings) as (_, session):
+        report = prune_unreferenced_listing_images(
+            session,
+            settings.image_cache_dir,
+            dry_run=dry_run,
+        )
+
+    mode = "would remove" if report.dry_run else "removed"
+    mb = report.bytes_reclaimed / (1024 * 1024)
+    console.print(
+        f"[bold green]Image cache prune complete.[/bold green] "
+        f"Referenced: [cyan]{report.referenced_files}[/cyan]; "
+        f"{mode}: [cyan]{report.orphan_files}[/cyan] file(s) "
+        f"([cyan]{mb:.2f}[/cyan] MB) under [cyan]{report.cache_dir}[/cyan]"
+    )
+

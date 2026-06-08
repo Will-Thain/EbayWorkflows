@@ -76,14 +76,19 @@
    - requires Tesseract on PATH for meaningful OCR text; without it, OpenCV regions still run but OCR fields may be empty
 17e. **reanalyze matching only** (clear OCR/detections, re-run 2→5→3→6→4 on cached images):
    `./scripts/reanalyze-matching.ps1`
-   - or full FAISS rebuild + reanalyze: `./scripts/rebuild-faiss-and-reanalyze.ps1`
-   - use after verification gate or `mtg_card_recognition` changes; see `card-recognition-architecture.md`
+   - pass `-SkipPhase6` if Phase 6 hangs on DirectML / GPU model load
+   - **finish ranking only** (reuse Phase 5/3, skip Phase 6): `./scripts/finish-ranking.ps1`
+   - post-run validation: `./scripts/post-reanalyze-validation.ps1`
+   - backlog tracker: `docs/open-items-status.md`
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:
    `ebay-workflows phase6-detect-lots --use-real-detection`
 18. run post-MVP integrity checks:
    `ebay-workflows data-integrity-check`
+18b. prune orphan listing image files from cache root (dry-run default):
+   `ebay-workflows prune-image-cache`
+   - execute deletions: `ebay-workflows prune-image-cache --execute`
 19. run local quality gates before push:
    `ruff check .`
    `py -m compileall src`

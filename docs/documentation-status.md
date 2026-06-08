@@ -6,7 +6,7 @@ Use these tags when reading or editing docs so **shipped code**, **historical be
 
 | Tag | Meaning |
 |-----|---------|
-| **[Shipped]** | Implemented on branch `feature/card-recognition-package` (or `main` after merge). Describes current production behavior. |
+| **[Shipped]** | Implemented on branch `main`. Describes current production behavior. |
 | **[Historical]** | Describes behavior **before** the consensus gate / `mtg_card_recognition` extraction. Kept for audit and before/after comparison — **do not restore**. |
 | **[Future]** | Planned, partial, or tunable — **not final** production behavior. May exist as config flags or stubs without full validation. |
 
@@ -41,6 +41,7 @@ When a line mixes shipped and planned parts, tag each clause: e.g. “FAISS corr
 | `adr/0001-tech-stack.md` | **[Shipped]** | Stack + `mtg_card_recognition` |
 | `README.md` (this folder) | **[Shipped]** | Doc map + tag legend pointer |
 | `packages/mtg-card-recognition/README.md` | Mixed | Shipped API; future standalone repo |
+| `open-items-status.md` | **[Shipped]** | P1–P4 backlog tracker with latest pipeline snapshot |
 
 ## Intentionally not “final” (by design)
 
@@ -52,7 +53,9 @@ These remain accurate but tagged **[Future]** where noted in source docs:
 - Alembic migrations (interim: `ensure-db-indexes`)
 - Condition-aware Cardmarket pricing
 - Labeled regression dataset in CI
-- Post-reanalyze operational metrics (update runbooks after each full reanalyze)
+- Post-reanalyze operational metrics — see `open-items-status.md` (updated after each full reanalyze)
+
+Last full doc sync: 2026-06-08 (branch `main`).
 
 ## Code map (for doc authors)
 
@@ -64,5 +67,4 @@ These remain accurate but tagged **[Future]** where noted in source docs:
 | Strict gate | `mtg_card_recognition.evidence` |
 | GUI provenance | `gui/listing_detail.py`, `gui/match_widgets.py` |
 | Export provenance | `services/ranked_export.py` |
-
-Last full doc sync: 2026-06-08 (branch `feature/card-recognition-package`).
+| Open items tracker | `docs/open-items-status.md` |
