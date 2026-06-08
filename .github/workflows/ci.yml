@@ -28,7 +28,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e . --no-deps
-          pip install pytest ruff sqlalchemy rapidfuzz
+          pip install \
+            alembic httpx psycopg[binary] pydantic pydantic-settings pytest rapidfuzz rich \
+            ruff sqlalchemy structlog tenacity typer
 
       - name: Ruff
         run: ruff check .
