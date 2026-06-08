@@ -8,9 +8,9 @@ Use with `ebay-workflows validate-env` for live operational warnings.
 
 ---
 
-## 1. eBay ingest limits
+## 1. eBay ingest limits **[Shipped]**
 
-### 1.1 ~10,000 results per query (offset ceiling)
+### 1.1 ~10,000 results per query (offset ceiling) **[Shipped]**
 
 **Symptoms:** No matter how high `EBAY_MAX_PAGES_PER_RUN` is, a single keyword stops returning new listings around 10,000 results.
 
@@ -30,7 +30,7 @@ ebay-workflows run --query "mtg lot" --no-dry-run --download-images `
 
 ---
 
-### 1.2 Incremental runs skip price updates
+### 1.2 Incremental runs skip price updates **[Shipped]**
 
 **Symptoms:** Re-running ingest does not refresh prices on listings already in the DB.
 
@@ -48,7 +48,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 1.3 Coarse pipeline resume skips Phase 1
+### 1.3 Coarse pipeline resume skips Phase 1 **[Shipped]**
 
 **Symptoms:** `run-resumable-pipeline --resume` skips Phase 1 whenever *any* listings exist, even after a partial failed ingest.
 
@@ -60,7 +60,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 1.4 Memory use on large fetches
+### 1.4 Memory use on large fetches **[Shipped]**
 
 **Symptoms:** Fetching thousands of listings held entire result sets in RAM before DB writes.
 
@@ -74,7 +74,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ## 2. EV and ranking accuracy
 
-### 2.1 GBP listings vs EUR Cardmarket (no FX)
+### 2.1 GBP listings vs EUR Cardmarket (no FX) **[Shipped]**
 
 **Symptoms:** EV compared listing cost in GBP directly against Cardmarket gross value in EUR — rankings skewed by ~15–20%.
 
@@ -120,7 +120,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 2.4 Bulk lot OCR matches wrong card repeatedly
+### 2.4 Bulk lot OCR matches wrong card repeatedly **[Shipped]** (partial)
 
 **Symptoms:** Many lots score against the same incorrect card (e.g. token match on bulk photos).
 
@@ -134,7 +134,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 2.5 Dual scoring models (v2_hybrid vs v2_lot)
+### 2.5 Dual scoring models (v2_hybrid vs v2_lot) **[Shipped]**
 
 **Symptoms:** Running Phase 4 after Phase 6 overwrote lot scores; unpriced listings sorted above negative lot EV when `rank_value=0`.
 
@@ -150,7 +150,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ## 3. Compute time at scale
 
-### 3.1 Phase 5 / Phase 6 runtime
+### 3.1 Phase 5 / Phase 6 runtime **[Shipped]**
 
 **Symptoms:** OCR + OpenCV on every image dominates wall time for 500+ listings.
 
@@ -164,7 +164,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 3.2 FAISS subset vs full corpus
+### 3.2 FAISS subset vs full corpus **[Shipped]**
 
 **Symptoms:** Default `FAISS_BUILD_MAX_CARDS=10000` indexes only a subset; embedding verify fails for cards outside the index.
 
@@ -179,7 +179,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 3.3 IndexFlatIP at ~110k vectors
+### 3.3 IndexFlatIP at ~110k vectors **[Shipped]**
 
 **Symptoms:** Exact search RAM ~0.2 GB at 110k × 512-d; latency acceptable on CPU for batch Phase 5.
 
@@ -191,7 +191,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ## 4. Data and infrastructure
 
-### 4.1 No schema migrations
+### 4.1 No schema migrations **[Shipped]** (interim indexes)
 
 **Symptoms:** `init-db` uses `create_all`; existing DBs miss new columns/indexes.
 
@@ -224,7 +224,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 4.3 Cardmarket bulk staleness
+### 4.3 Cardmarket bulk staleness **[Shipped]**
 
 **Symptoms:** EV uses yesterday's (or older) trend prices.
 
@@ -235,7 +235,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 4.4 DirectML / torch stack fragility
+### 4.4 DirectML / torch stack fragility **[Shipped]** (documented)
 
 **Symptoms:** GPU path breaks on driver or package upgrades; CI does not test `[gpu]` extra.
 
@@ -247,7 +247,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ## 5. Operational gaps
 
-### 5.1 Global rate cap not enforced on CDN downloads
+### 5.1 Global rate cap not enforced on CDN downloads **[Shipped]** (partial)
 
 **Symptoms:** Parallel image downloads can spike beyond intended aggregate budget.
 
@@ -261,7 +261,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 5.2 Failed image downloads silently reduce coverage
+### 5.2 Failed image downloads silently reduce coverage **[Shipped]**
 
 **Symptoms:** Listings without local images skip OCR/embedding.
 
@@ -274,7 +274,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 5.3 Concurrent pipeline runs
+### 5.3 Concurrent pipeline runs **[Shipped]**
 
 **Symptoms:** GUI Workflows + CLI + scheduler can overlap, corrupting cache or doubling API usage.
 
@@ -286,7 +286,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 5.4 OAuth token on very long runs
+### 5.4 OAuth token on very long runs **[Future]**
 
 **Symptoms:** Multi-hour ingests might outlive token TTL (rare at current page caps).
 
@@ -330,7 +330,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 6.3 Non-MTG noise in broad queries
+### 6.3 Non-MTG noise in broad queries **[Shipped]** (partial)
 
 **Symptoms:** Comics, apparel, proxies appear in MTG searches.
 
@@ -342,7 +342,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ---
 
-### 6.4 Condition / language mismatch
+### 6.4 Condition / language mismatch **[Future]**
 
 **Symptoms:** Cardmarket NM trend price applied to eBay LP listing.
 

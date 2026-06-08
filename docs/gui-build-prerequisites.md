@@ -1,5 +1,7 @@
 # GUI Build Prerequisites
 
+**Status:** Checklist reflects **[Shipped]** GUI (GUI-0–7 complete). Tags: `documentation-status.md`.
+
 Checklist and **locked defaults** before implementing the desktop app. See `gui-application.md` for full UI spec.
 
 ## Ready-to-build checklist
@@ -7,7 +9,8 @@ Checklist and **locked defaults** before implementing the desktop app. See `gui-
 - [x] Desktop platform: **PySide6** (Qt 6; no browser)
 - [x] Schema sketched: `listing_favorites`, `scheduled_jobs` in `data-model.md`
 - [x] Operator workflows documented in `gui-operator-workflows.md`
-- [ ] Run `ebay-workflows init-db` after pulling models (creates new tables via `create_all`)
+- [x] Verification provenance in match detail (`listing_detail.py`, `match_widgets.py`)
+- [x] Run `ebay-workflows init-db` after pulling models (creates new tables via `create_all`)
 - [x] Confirm `[gui]` optional dependency approved (`pyside6`; in-app schedule tick uses `QTimer`, no APScheduler)
 - [ ] Qt runtime smoke: `python -c "from PySide6.QtWidgets import QApplication"` succeeds after install
 - [ ] Hugging Face / Tesseract available if scheduling Phase 5 headless later

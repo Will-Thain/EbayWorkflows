@@ -1,5 +1,7 @@
 # GUI Operator Workflows
 
+**Status:** Flows **[Shipped]**; post-consensus verify review steps below. Tags: `documentation-status.md`.
+
 ## Home dashboard
 
 Open the **Home** tab first for a snapshot of the pipeline (listing counts, ranked rows, favourites, cached images) and a dedicated **Ongoing workflows** panel. Every running `workflow_step` appears as a card with progress and a **GUI** vs **External** badge. Use **Manage workflows →** to jump to the Workflows tab for logs and start/stop.
@@ -15,7 +17,9 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
 3. Scan the table; select rows with high **EV adj** and acceptable **confidence**.
 4. For each shortlist:
    - Review **top card** and match % in the detail pane.
-   - Check **cached image** (or note missing cache).
+   - Check **Verified by** (`set_collector` / `set_symbol`) when present — OCR/FAISS/mana alone do not verify under current gate.
+   - Expand match row for **Proof detection** / **Proof crop** when auditing a verified printing.
+   - Check **cached image** (detection overlay highlights proof region when `verification_detection_id` is set).
    - Click **Open on eBay** to verify set/condition.
 5. Press **★ Favourite** on listings to revisit.
 6. Set filter **Favourites only** to build a watchlist.
@@ -38,6 +42,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    ebay-workflows phase6-detect-lots --use-real-detection
    ebay-workflows phase4-rank --hybrid
    ```
+   Or use `./scripts/reanalyze-matching.ps1` for full matching re-run on cached images (clears OCR/detections first).
    Or use `./scripts/rerun-image-matching.ps1` when only re-scoring cached images.
 2. In GUI: click **Refresh** on Opportunities.
 3. Compare new top ranks vs yesterday’s favourites (notes still attached).

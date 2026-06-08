@@ -16,7 +16,7 @@ The docs in this folder define:
 
 ## Documentation status labels
 
-Docs use **[Shipped]**, **[Historical]**, and **[Future]** tags for recognition/matching behavior. See `documentation-status.md` before trusting older paragraphs.
+All docs in this folder use **[Shipped]**, **[Historical]**, and **[Future]** tags where behavior may differ from older text. See `documentation-status.md` for the full index before trusting older paragraphs.
 
 ## Document Map
 

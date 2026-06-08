@@ -1,5 +1,7 @@
 # Error Model
 
+**Status:** Categories and exit codes **[Shipped]**. Tags: `documentation-status.md`.
+
 ## Error Categories
 
 - `ConfigurationError`: invalid or missing env/config values
@@ -11,6 +13,7 @@
 - `DataValidationError`: payload parse/contract mismatch
 - `DataSourceError`: missing/invalid Cardmarket bulk data file or provenance
 - `WorkflowExecutionError`: step-level orchestration failure
+- `VerificationGateError` (logical): candidate fails strict verify — recorded in `evidence_json.pricing_reject_reason`, not a CLI abort
 
 ## Retry Policy
 
