@@ -5,8 +5,8 @@ import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt, QTimer, QUrl, QSize
+from PySide6.QtGui import QDesktopServices, QAction
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -95,7 +95,9 @@ class OpportunitiesTab(QWidget):
         self._table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self._table.setSortingEnabled(True)
         configure_data_table(self._table)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._table.verticalHeader().setDefaultSectionSize(52)
+        self._table.setIconSize(QSize(48, 48))
+        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self._table.selectionModel().selectionChanged.connect(self._on_selection_changed)
         splitter.addWidget(self._table)
 
@@ -361,6 +363,15 @@ class MainWindow(QMainWindow):
         )
         self._workflows._stale_panel.changed.connect(self._dashboard.refresh)
         self.setCentralWidget(tabs)
+
+        view_menu = self.menuBar().addMenu("View")
+        self._dark_mode_action = QAction("Dark theme", self)
+        self._dark_mode_action.setCheckable(True)
+        from .theme import is_dark_mode_enabled, toggle_dark_mode
+
+        self._dark_mode_action.setChecked(is_dark_mode_enabled())
+        self._dark_mode_action.triggered.connect(lambda _: toggle_dark_mode(QApplication.instance()))
+        view_menu.addAction(self._dark_mode_action)
 
         self._status = QLabel("")
         self.statusBar().addPermanentWidget(self._status, stretch=1)

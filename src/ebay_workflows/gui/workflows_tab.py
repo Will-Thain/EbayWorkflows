@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..config import Settings
 from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .job_runner import JobRunner
+from .job_logs_panel import JobLogsPanel
 from .poll_errors import GuiPollErrorReporter, handle_poll_error
 from .progress_estimates import estimate_job_total, poll_job_progress
 from .schedules_panel import SchedulesPanel
@@ -136,6 +137,7 @@ class WorkflowsTab(QWidget):
         )
         self._stale_panel.changed.connect(self._poll_workflow_status)
         inner_tabs.addTab(self._stale_panel, "Stuck runs")
+        inner_tabs.addTab(JobLogsPanel(settings), "Logs")
         layout.addWidget(inner_tabs)
 
         self._runner.log_line.connect(self._append_log)

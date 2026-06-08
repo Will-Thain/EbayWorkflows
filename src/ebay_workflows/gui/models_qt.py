@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QSize
+from PySide6.QtGui import QPixmap
 
 from ..services.ranked_export import RankedListingRow
 from .presenters import truncate_title
@@ -52,7 +53,7 @@ class GenericTableModel(QAbstractTableModel):
 
 
 class RankedListTableModel(QAbstractTableModel):
-    HEADERS = ("Rank", "EV adj", "Conf", "Title", "Top card", "★", "Price")
+    HEADERS = ("", "Rank", "EV adj", "Conf", "Title", "Top card", "★", "Price")
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -82,25 +83,41 @@ class RankedListTableModel(QAbstractTableModel):
         row = self.row_at(index)
         if row is None:
             return None
+        col = index.column()
         if role == Qt.ItemDataRole.UserRole:
             return row.listing_id
+        if role == Qt.ItemDataRole.DecorationRole and col == 0:
+            path = row.thumbnail_local_path
+            if path:
+                pixmap = QPixmap(path)
+                if not pixmap.isNull():
+                    return pixmap.scaled(
+                        48,
+                        48,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+            return None
+        if role == Qt.ItemDataRole.SizeHintRole and col == 0:
+            return QSize(52, 52)
         if role != Qt.ItemDataRole.DisplayRole:
             return None
 
-        col = index.column()
         if col == 0:
-            return str(row.rank)
+            return ""
         if col == 1:
-            return f"{row.ev_adjusted:.2f}"
+            return str(row.rank)
         if col == 2:
-            return f"{row.confidence_score:.2f}"
+            return f"{row.ev_adjusted:.2f}"
         if col == 3:
-            return truncate_title(row.title)
+            return f"{row.confidence_score:.2f}"
         if col == 4:
-            return row.top_card_name or ""
+            return truncate_title(row.title)
         if col == 5:
-            return "★" if row.is_favorited else ""
+            return row.top_card_name or ""
         if col == 6:
+            return "★" if row.is_favorited else ""
+        if col == 7:
             return f"{row.price_amount:.2f} {row.currency}"
         return None
 

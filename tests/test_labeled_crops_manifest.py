@@ -52,3 +52,13 @@ def test_example_entries_have_unique_ids() -> None:
     manifest = json.loads((FIXTURES / "manifest.example.json").read_text(encoding="utf-8"))
     ids = [entry["id"] for entry in manifest["entries"]]
     assert len(ids) == len(set(ids))
+
+
+def test_manifest_image_paths_exist_when_present() -> None:
+    manifest = json.loads((FIXTURES / "manifest.example.json").read_text(encoding="utf-8"))
+    for entry in manifest["entries"]:
+        rel = Path(entry["path"])
+        if rel.name.endswith(".gitkeep"):
+            continue
+        full = FIXTURES / rel
+        assert full.is_file(), f"missing fixture image: {rel}"

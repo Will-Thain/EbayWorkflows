@@ -3,12 +3,12 @@
   "entries": [
     {
       "id": "example-single-card-pass",
-      "path": "examples/.gitkeep",
+      "path": "examples/minimal.png",
       "expected_set": "lea",
       "expected_collector": "161",
       "expected_name": "Lightning Bolt",
       "verify_expect": "pass",
-      "notes": "Placeholder row — replace path with a real crop PNG when available."
+      "notes": "Minimal 1x1 PNG placeholder — replace with a real crop for recognition regression."
     },
     {
       "id": "example-blurry-fail",
