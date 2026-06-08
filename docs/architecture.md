@@ -66,14 +66,15 @@ Core components:
 
 ## CV and Matching Stack
 
-Propose-then-confirm design (full detail: `card-recognition-architecture.md`):
+Propose-then-confirm design (full detail: `card-recognition-architecture.md`). Status tags: `documentation-status.md`.
 
-- `OpenCV` — region detection, alignment, zone crops
-- `OpenCLIP` + `FAISS` — propose Scryfall candidates from art-zone embeddings
-- `Tesseract` (baseline) / `PaddleOCR` (planned) — zone OCR for confirmation
-- `set_symbol_match` + `mana_cost` — non-OCR zone confirmation signals
-- `RapidFuzz` — name reconciliation against Scryfall records
-- Optional future: Milo/CollectorVision catalog as embedder proposer (no zone replacement)
+- `src/mtg_card_recognition/` — extractable recognition library **[Shipped]**
+- `OpenCV` — region detection, alignment, zone crops **[Shipped]**
+- `OpenCLIP` + `FAISS` — art-zone embeddings; proposal + corroboration **[Shipped]**; Milo alt embedder **[Future]**
+- `Tesseract` — zone OCR **[Shipped]**; `PaddleOCR` primary **[Future]**
+- `set_symbol_match` + `mana_cost` — zone signals; mana supporting only **[Shipped]**
+- `RapidFuzz` — name reconciliation **[Shipped]**
+- Strict consensus gate — `mtg_card_recognition.evidence` **[Shipped]**
 
 ## Error Handling Strategy
 

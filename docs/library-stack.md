@@ -4,9 +4,9 @@
 
 Production matching is a **hybrid propose-then-confirm** pipeline (see `card-recognition-architecture.md`):
 
-- **Propose (today):** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`, `source_method=faiss_proposal`)
-- **Propose (planned):** Milo HF catalog as alternate embedder/proposer
-- **Confirm (shipped):** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**; one verified winner per listing
+- **Propose [Shipped]:** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`, `source_method=faiss_proposal`)
+- **Propose [Future]:** Milo HF catalog as alternate embedder/proposer
+- **Confirm [Shipped]:** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**; one verified winner per listing
 
 Core dependencies:
 
@@ -39,7 +39,7 @@ Zone fields (title, set code, collector number, symbol, mana) disambiguate what 
 ## Recommended Defaults
 
 - **Image preprocessing:** `opencv-python`
-- **OCR:** `paddleocr` (planned; `pytesseract` interim in `ocr_extract.py`)
+- **OCR:** `pytesseract` **[Shipped]** via `mtg_card_recognition.ocr`; `paddleocr` primary **[Future]**
 - **Embeddings:** `open-clip-torch` with `ViT-B-32` + `force_quick_gelu=True`
 - **Vector index:** `faiss-cpu` (full corpus ~110k with `build-faiss-full.ps1`)
 - **Fuzzy text matching:** `rapidfuzz`

@@ -8,16 +8,19 @@ Operational runbooks: `runbook-local.md`, `large-scale-ingest.md`.
 
 | Item | Status |
 |------|--------|
-| `mtg_card_recognition` package (extractable) | **Shipped** on `feature/card-recognition-package` |
-| Strict consensus verification gate | **Shipped** — `mtg_card_recognition.evidence` + per-listing winner |
-| Single-winner singles EV (Phase 4 / hybrid) | **Shipped** — `select_pricing_candidate` |
-| OCR reprint bleed fix | **Shipped** — `candidates_for_region_evidence` |
-| Evidence provenance (`verification_*` on attach) | **Shipped** — Phase 5 region persist |
-| `zones_available` computation | **Shipped** — `zones/signals.compute_zones_available` |
-| FAISS candidate proposal (`FAISS_PROPOSE_CANDIDATES`) | **Shipped** — Phase 5 inserts `faiss_proposal` when top-1 ∉ title matches |
-| Milo / alternate embedder proposal | **Not built** |
-| PaddleOCR on zones | **Planned** — not wired (`ocr_extract.py` still Tesseract) |
-| Threshold calibration (0.80 / 0.65) | **Not validated** — do not copy into code without labeled eBay crops |
+| `mtg_card_recognition` package (extractable) | **[Shipped]** on `feature/card-recognition-package` |
+| Strict consensus verification gate | **[Shipped]** — `mtg_card_recognition.evidence` + per-listing winner |
+| Single-winner singles EV (Phase 4 / hybrid) | **[Shipped]** — `select_pricing_candidate` |
+| OCR reprint bleed fix | **[Shipped]** — `candidates_for_region_evidence` |
+| Evidence provenance (`verification_*` on attach) | **[Shipped]** — Phase 5 region persist |
+| `zones_available` computation | **[Shipped]** — `zones/signals.compute_zones_available` |
+| FAISS candidate proposal (`FAISS_PROPOSE_CANDIDATES`) | **[Shipped]** — Phase 5 inserts `faiss_proposal` when top-1 ∉ title matches |
+| Scryfall `layout` / `frame` layout hints | **[Shipped]** — `layout_from_scryfall_payload`; wider art-zone wiring **[Future]** |
+| FAISS index process cache | **[Shipped]** — `embedding_index.clear_faiss_index_cache` |
+| Milo / alternate embedder | **[Future]** |
+| PaddleOCR on zones | **[Future]** — Tesseract interim **[Shipped]** |
+| Threshold calibration (`VERIFY_*` defaults) | **[Future]** — starting points **[Shipped]** in code; eBay crop eval not done |
+| Phase 6 FAISS override vs singles gate alignment | **[Future]** |
 
 ---
 
@@ -78,7 +81,7 @@ Production phase order: **2 → 5 → 3 → 6 → 4** (`workflow-phases.md`).
 
 ---
 
-## Historical audit (pre-fix baseline)
+## Historical audit **[Historical]**
 
 A detailed audit was completed before coding the consensus gate. The issues below described **production behavior before** `feature/card-recognition-package`; all P0 items are **fixed** in `mtg_card_recognition`. Re-run Phase 5 reanalyze on existing caches to measure impact (expect fewer `image_verified` than the old ~101 OR-gate run).
 
@@ -101,7 +104,7 @@ Remaining open items: Phase 6 FAISS override philosophy alignment, OCR confidenc
 
 ---
 
-## Historical P0 bugs (reference — fixed in code)
+## Historical P0 bugs **[Historical]**
 
 ### 1. Reprint OCR bleed
 
@@ -224,11 +227,11 @@ PROPOSAL (shipped when FAISS_PROPOSE_CANDIDATES=true):
 
 **Thresholds:** `VERIFY_NAME_HARD_MIN` (0.75), `VERIFY_NAME_STRONG_MIN` (0.88), `VERIFY_SYMBOL_STRONG_MIN` (0.55) — calibrate on labeled eBay crops after reanalyze.
 
-### Historical OR gate (pre-fix — do not restore)
+### Historical OR gate **[Historical]**
 
 Before `mtg_card_recognition`, `candidate_has_image_evidence()` verified if **any** signal passed (OCR, FAISS, set-only, mana). Last OR-gate reanalyze (~110k FAISS): ~101 `image_verified` — roughly OCR 61, mana 39, FAISS 1. Mana hits were OR leakage, not quality proof.
 
-### Draft consensus gate — **REJECTED** (do not implement)
+### Draft consensus gate — **REJECTED** **[Historical]**
 
 ```text
 ❌ if bottom set+collector → verified          (allowed set-only in old code)
@@ -291,12 +294,14 @@ See prior deep review in git history. Short takeaways:
 
 None implement our zone confirmation layer.
 
-### Embedding role correction
+### Embedding roles
 
-| Today | Target |
-|-------|--------|
-| FAISS corroborates Phase 2 IDs only | + proposal path for top-K ∉ title candidates |
-| OpenCLIP weak on eBay art zones | Optional Milo sidecar |
+| Role | Status |
+|------|--------|
+| FAISS corroborates Phase 2 candidate IDs | **[Shipped]** |
+| FAISS top-1 proposal when absent from Phase 2 (`FAISS_PROPOSE_CANDIDATES`) | **[Shipped]** — still requires strict verify to price |
+| OpenCLIP on eBay art zones (weak vs printing-aware) | **[Shipped]** limitation |
+| Milo / alternate embedder sidecar | **[Future]** |
 
 ---
 
@@ -304,15 +309,15 @@ None implement our zone confirmation layer.
 
 | Step | Work | Status | Rebuild 110k? |
 |------|------|--------|---------------|
-| **1** | Single winner per listing for EV/pricing | **Done** | No |
-| **2** | Per-printing verification; remove set-only match | **Done** | No |
-| **3** | Remove mana/embedding standalone verify; pricing guardrails | **Done** | No |
-| **4** | Phase 5 dead branch + evidence provenance | **Done** | No |
-| **5** | Consensus spec + `zones_available` | **Done** | No |
-| **6** | FAISS top-1 proposal (`FAISS_PROPOSE_CANDIDATES`) | **Done** | No |
-| **7** | PaddleOCR on name/bottom zones | Planned | No |
-| **8** | Milo index replace (optional) | Planned | Re-embed only |
-| **9** | Threshold calibration dataset | Planned | No |
+| **1** | Single winner per listing for EV/pricing | **[Shipped]** | No |
+| **2** | Per-printing verification; remove set-only match | **[Shipped]** | No |
+| **3** | Remove mana/embedding standalone verify; pricing guardrails | **[Shipped]** | No |
+| **4** | Phase 5 dead branch + evidence provenance | **[Shipped]** | No |
+| **5** | Consensus spec + `zones_available` | **[Shipped]** | No |
+| **6** | FAISS top-1 proposal (`FAISS_PROPOSE_CANDIDATES`) | **[Shipped]** | No |
+| **7** | PaddleOCR on name/bottom zones | **[Future]** | No |
+| **8** | Milo index replace (optional) | **[Future]** | Re-embed only |
+| **9** | Threshold calibration dataset | **[Future]** | No |
 
 ---
 

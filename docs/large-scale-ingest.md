@@ -130,10 +130,10 @@ Existing listings are skipped when `PHASE1_SKIP_EXISTING_LISTINGS=true`. Phase 2
 | 429 / throttling | Lower `EBAY_REQUESTS_PER_MINUTE`; reduce `PIPELINE_MAX_DOWNLOAD_WORKERS` |
 | Partial Phase 1 after crash | Re-run Phase 1; batch commits preserve completed listings |
 | Failed image downloads | `ebay-workflows retry-failed-images` |
-| Rankings all 0.00 EV | Run Phase 5 before Phase 3; bulk lots need Phase 6 crop evidence for pricing |
-| Bulk lots never priced | Ensure lot crops have set/collector or FAISS evidence; title-only blocked by design |
-| FAISS match weak after subset index | Full build: `FAISS_BUILD_ALL_CARDS=true` + `-RebuildFaiss` or `./scripts/build-faiss-full.ps1` |
-| FAISS match weak after full art-zone index | Expected with generic OpenCLIP on eBay photos — see `card-recognition-architecture.md`; evaluate Milo catalog before re-embedding |
+| Rankings all 0.00 EV | Run Phase 5 before Phase 3; bulk lots need Phase 6 crop evidence for pricing **[Shipped]** pipeline order |
+| Bulk lots never priced | Lot crops need **set_collector or verified set symbol** **[Shipped]**; FAISS alone does not verify; title-only blocked by design |
+| FAISS match weak after subset index | Full build: `FAISS_BUILD_ALL_CARDS=true` + `-RebuildFaiss` **[Shipped]** |
+| FAISS match weak after full art-zone index | Expected with generic OpenCLIP **[Shipped]** limitation; Milo eval **[Future]** — see `card-recognition-architecture.md` |
 | FAISS crop mismatch warning | `validate-env` reports index vs config crop mode — re-embed from cached `scryfall_art/` (no Scryfall re-download) |
 | >10k results needed | Split into multiple queries; dedup handles overlap |
 

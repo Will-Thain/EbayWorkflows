@@ -14,8 +14,13 @@ The docs in this folder define:
 - confidence/EV scoring strategy
 - development roadmap and quality gates
 
+## Documentation status labels
+
+Docs use **[Shipped]**, **[Historical]**, and **[Future]** tags for recognition/matching behavior. See `documentation-status.md` before trusting older paragraphs.
+
 ## Document Map
 
+- `documentation-status.md` - shipped vs historical vs future labels; canonical doc index
 - `product-requirements.md` - scope, users, objectives, constraints
 - `workflow-phases.md` - phase-by-phase behavior and acceptance criteria
 - `architecture.md` - component design for CLI, services, and workers

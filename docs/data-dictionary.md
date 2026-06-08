@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide clear semantic definitions for key persisted fields and provenance requirements.
+Provide clear semantic definitions for key persisted fields and provenance requirements. Verification fields reflect **[Shipped]** consensus gate behavior; legacy OR-gate values are **[Historical]** — see `documentation-status.md`.
 
 ## Listings
 

@@ -23,11 +23,16 @@ src/ebay_workflows/adapters/recognition_settings.py
 3. Copy recognition tests from `tests/test_card_*`, `tests/test_image_evidence.py`, etc.
 4. Remove `ebay_workflows.adapters` dependency; callers pass `RecognitionSettings` directly.
 
-## Public API
+## Public API **[Shipped]**
 
 - `RecognitionSettings` — framework-agnostic configuration
 - `extract_card_zone_signals` — `mtg_card_recognition.zones.signals`
 - `apply_per_listing_verification_gates` — strict per-listing verification
 - `select_pricing_candidate` — single printing for singles EV
+- `candidates_for_region_evidence` — reprint-safe region attach
 
-See `docs/card-recognition-architecture.md` in the parent monorepo.
+## Planned **[Future]**
+
+- Standalone repo CI, full test port list, PaddleOCR backend, Milo embedder integration
+
+See `docs/card-recognition-architecture.md` and `docs/documentation-status.md` in the parent monorepo.

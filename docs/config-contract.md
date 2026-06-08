@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Define all required environment variables, defaults, and validation rules before coding starts.
+Define all required environment variables, defaults, and validation rules.
+
+Recognition/matching variables are **[Shipped]** unless noted **[Future]** in `documentation-status.md` (e.g. threshold calibration).
 
 ## Core Runtime
 

@@ -2,6 +2,8 @@
 
 This document tracks known scalability and accuracy limits, the **recommended fix** for each, and what is **already implemented** in this repository.
 
+**Status tags:** **[Shipped]** = current code; **[Historical]** = pre-consensus OR-gate era; **[Future]** = planned or not final. See `documentation-status.md`.
+
 Use with `ebay-workflows validate-env` for live operational warnings.
 
 ---
@@ -92,11 +94,14 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 **Best fix:** Tune threshold per listing type; or use OCR/embedding confidence to lower effective threshold for priced singles.
 
-**Implemented:**
-- `pricing_allowed_for_candidate()` allows Cardmarket join when `image_verified` with OCR/set_collector/set_symbol/embedding source.
+**Implemented [Shipped]:**
+- `pricing_allowed_for_candidate()` allows Cardmarket join when `image_verified` with **`set_collector` or `set_symbol` only** (strict gate).
+- Title-only path still uses `TITLE_MATCH_MIN_SCORE_FOR_PRICING` when not image-verified.
 - Phase 3 runs **after** Phase 5 in all production scripts so newly verified singles receive prices.
 
-**Operator tuning:** Lower `TITLE_MATCH_MIN_SCORE_FOR_PRICING` to `0.85` in `.env` if false rejects are acceptable for title-only paths.
+**Historical [Historical]:** Pre-consensus gate allowed OCR/embedding/mana as `image_verification_source` for pricing bypass — removed.
+
+**Operator tuning [Future]:** Per-listing-type thresholds; OCR/embedding confidence to lower effective title threshold.
 
 ---
 
@@ -106,10 +111,12 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 **Root cause:** `title_match_allowed_for_pricing()` blocked all bulk listing titles, including per-crop matches with strong image evidence.
 
-**Implemented:**
-- `crop_match_allowed_for_pricing()` — bulk lots price individual crops when crop-level image evidence passes (set/collector, FAISS, set symbol).
-- Extended `candidate_has_image_evidence()` for zone OCR, set symbol templates, and Phase 6 `match_evidence` payloads.
-- Phase 5 attaches `zone_evidence` only to candidates the region plausibly references.
+**Implemented [Shipped]:**
+- `crop_match_allowed_for_pricing()` — bulk lots price individual crops when crop-level evidence passes **strict rules** (primarily `set_collector` or verified set symbol).
+- `candidate_has_image_evidence()` / `mtg_card_recognition.evidence` — FAISS and mana **do not alone verify**.
+- Phase 5 attach uses `candidates_for_region_evidence` + provenance fields.
+
+**Historical [Historical]:** “FAISS or set symbol alone verifies bulk crop” under OR gate.
 
 ---
 
@@ -293,18 +300,21 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 ### 6.1 Generic OpenCLIP weak on eBay art-zone queries
 
-**Symptoms:** After full art-zone FAISS rebuild (~110k vectors), FAISS accounts for a tiny fraction of `image_verified` (OCR and mana dominate). Generic ViT-B/32 is not MTG-printing-aware.
+**Symptoms:** After full art-zone FAISS rebuild (~110k vectors), FAISS rarely drives **verification** (expected under strict gate). Generic ViT-B/32 is not MTG-printing-aware.
 
-**Best fix:**
-1. Tighten confirmation to zone consensus (do not verify on FAISS alone).
-2. Evaluate Milo/CollectorVision HF catalog on existing aligned crops — no Scryfall re-download.
-3. PaddleOCR on name/bottom zones using existing `crops/zones/*` files.
+**Best fix [Future]:**
+1. Evaluate Milo/CollectorVision HF catalog on existing aligned crops — no Scryfall re-download.
+2. PaddleOCR on name/bottom zones using existing `crops/zones/*` files.
+3. Calibrate `VERIFY_*` thresholds on labeled eBay crops.
 
-**Implemented (partial):** Zone pipeline, art-zone index, set symbol templates, mana evidence.
+**Implemented [Shipped]:**
+- Zone pipeline, art-zone index, set symbol templates, mana as **supporting** signal only.
+- Strict consensus gate — FAISS/mana/OCR do not alone set `image_verified`.
+- `FAISS_PROPOSE_CANDIDATES` inserts proposal candidates; verify gate still required for pricing.
 
-**Documented:** `card-recognition-architecture.md` — external library analysis and integration roadmap.
+**Historical [Historical]:** Last OR-gate reanalyze ~101 `image_verified` (OCR ~61, mana ~39, FAISS ~1) — mana/OCR counts reflected leakage, not quality.
 
-**Future:** Strict consensus gate in `image_evidence.py`; optional Milo embed path.
+**Documented:** `card-recognition-architecture.md` — external library analysis and rebuild matrix.
 
 ---
 
@@ -312,9 +322,11 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 **Symptoms:** eBay titles are ambiguous; fuzzy match alone is insufficient.
 
-**Best fix:** Phase 5 zone OCR + embeddings as signals; title match as prior; consensus gate for pricing.
+**Best fix [Shipped]:** Phase 5 zone OCR + embeddings as signals; title match as prior; strict consensus gate for pricing.
 
-**Implemented:** Hybrid weights: title 35%, OCR 25%, embedding 25%, price freshness 15%.
+**Implemented [Shipped]:** Hybrid weights: title 35%, OCR 25%, embedding 25%, price freshness 15%; `select_pricing_candidate` for singles EV.
+
+**Future [Future]:** Re-weight hybrid components after post-consensus reanalyze metrics.
 
 ---
 
@@ -346,8 +358,12 @@ PHASE1_REFRESH_AFTER_HOURS=24
 |----------|---------|---------|
 | `FAISS_INDEX_USE_ART_ZONE` | `true` | Index art-zone crops (matches query domain); rebuild index after toggle |
 | `FAISS_BUILD_ALL_CARDS` | `false` | Full Scryfall index via `build-faiss-full.ps1` in large ingest |
-| `IMAGE_EVIDENCE_MIN_FAISS_SCORE` | `0.55` | FAISS verification threshold |
-| `IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE` | `0.30` | Mana pip evidence threshold |
+| `IMAGE_EVIDENCE_MIN_FAISS_SCORE` | `0.55` | FAISS proposal/corroboration threshold **[Shipped]** — not standalone verify |
+| `IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE` | `0.30` | Mana zone signal threshold **[Shipped]** — supporting only |
+| `VERIFY_NAME_HARD_MIN` | `0.75` | Hard verify name OCR **[Shipped]** defaults; calibration **[Future]** |
+| `VERIFY_NAME_STRONG_MIN` | `0.88` | Strong symbol path name OCR **[Shipped]** |
+| `VERIFY_SYMBOL_STRONG_MIN` | `0.55` | Set symbol verify threshold **[Shipped]** |
+| `FAISS_PROPOSE_CANDIDATES` | `true` | Insert `faiss_proposal` when top-1 ∉ Phase 2 **[Shipped]** |
 | `IMAGE_ALLOW_FULL_FRAME_FALLBACK` | `true` | OCR/embed when contour detection finds no crop |
 | `PHASE5_SKIP_ANALYZED_IMAGES` | `false` | Set `true` for faster incremental image re-runs (skip existing detections) |
 | `PHASE6_SKIP_ANALYZED_IMAGES` | `false` | Set `true` to skip images with existing lot detections |

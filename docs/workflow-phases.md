@@ -150,9 +150,9 @@ Use `./scripts/reanalyze-matching.ps1`, `./scripts/rerun-image-matching.ps1`, or
 
 See `card-recognition-architecture.md` for zone layout, artifact paths, and external library comparison.
 
-### Verification gate (strict consensus — shipped)
+### Verification gate **[Shipped]**
 
-A candidate is **image-verified** only when strict zone rules pass (`mtg_card_recognition.evidence`):
+Strict consensus rules (`mtg_card_recognition.evidence`):
 
 - **Hard verify:** bottom strip **set + collector** match the printing **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** set symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`)
 - **Strong symbol verify:** set symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees
@@ -162,9 +162,11 @@ OCR, FAISS, and mana **alone never verify**. At most **one candidate per listing
 
 Evidence records `verification_listing_image_id`, `verification_detection_id`, and `verification_region_path` on attach.
 
-Optional: `FAISS_PROPOSE_CANDIDATES=true` inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches (still subject to strict verify gate).
+Optional: `FAISS_PROPOSE_CANDIDATES=true` **[Shipped]** inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches (still subject to strict verify gate).
 
-Full spec: `card-recognition-architecture.md`.
+**Historical [Historical]:** OR gate verified on any single signal (OCR, FAISS, mana); ~101 verified listings in last pre-fix reanalyze.
+
+Full spec: `card-recognition-architecture.md`. Tags: `documentation-status.md`.
 
 ### FAISS index
 
