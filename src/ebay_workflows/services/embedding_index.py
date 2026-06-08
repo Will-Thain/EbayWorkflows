@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import Settings
-from ..models import ScryfallCard
+from ..models import ListingCardCandidate, ScryfallCard
 from .card_zones import extract_art_zone_from_card_image
 from .openclip_runtime import embed_image_file, embed_image_paths
 from .progress_report import emit_progress
@@ -24,6 +24,30 @@ class EmbeddingMatch:
     scryfall_id: str
     card_name: str | None
     score: float
+
+
+_FAISS_INDEX_CACHE: dict[str, tuple[Any, dict[str, Any]]] = {}
+
+
+def clear_faiss_index_cache() -> None:
+    """Drop cached FAISS handles (for tests or after index rebuild)."""
+    _FAISS_INDEX_CACHE.clear()
+
+
+def _load_faiss_index(index_path: str) -> tuple[Any, dict[str, Any]] | None:
+    import faiss  # type: ignore[import-not-found]
+
+    resolved = str(Path(index_path).resolve())
+    if resolved in _FAISS_INDEX_CACHE:
+        return _FAISS_INDEX_CACHE[resolved]
+
+    if not index_exists(resolved):
+        return None
+
+    index = faiss.read_index(resolved)
+    meta = json.loads(_meta_path(resolved).read_text(encoding="utf-8"))
+    _FAISS_INDEX_CACHE[resolved] = (index, meta)
+    return index, meta
 
 
 def _meta_path(index_path: str) -> Path:
@@ -439,13 +463,12 @@ def build_faiss_index_all_batches(
 
 
 def search_similar_cards(image_path: str, settings: Settings, top_k: int = 5) -> list[EmbeddingMatch]:
-    import faiss  # type: ignore[import-not-found]
-
     index_path = settings.faiss_index_path
-    if not index_exists(index_path):
+    loaded = _load_faiss_index(index_path)
+    if loaded is None:
         return []
 
-    meta = json.loads(_meta_path(index_path).read_text(encoding="utf-8"))
+    index, meta = loaded
     expected_mode = faiss_index_crop_mode(settings)
     indexed_mode = meta.get("index_crop_mode", "full_card")
     if indexed_mode != expected_mode:
@@ -458,7 +481,6 @@ def search_similar_cards(image_path: str, settings: Settings, top_k: int = 5) ->
         return []
 
     query = embed_image_file(image_path, settings)
-    index = faiss.read_index(index_path)
     k = min(top_k, len(ids))
     scores, indices = index.search(query, k)
 
@@ -474,6 +496,58 @@ def search_similar_cards(image_path: str, settings: Settings, top_k: int = 5) ->
             )
         )
     return matches
+
+
+def propose_embedding_candidates(
+    session: Session,
+    listing_id: Any,
+    candidates: list[ListingCardCandidate],
+    matches: list[EmbeddingMatch],
+    settings: Settings,
+) -> int:
+    """Insert a FAISS top-1 candidate when it is absent from Phase 2 title matches."""
+    if not settings.faiss_propose_candidates or not matches:
+        return 0
+
+    top = matches[0]
+    if top.score < settings.image_evidence_min_faiss_score:
+        return 0
+
+    existing_ids = {str(candidate.scryfall_id) for candidate in candidates if candidate.scryfall_id}
+    if top.scryfall_id in existing_ids:
+        return 0
+
+    try:
+        proposed_id = uuid.UUID(top.scryfall_id)
+    except ValueError:
+        return 0
+
+    if session.get(ScryfallCard, proposed_id) is None:
+        return 0
+
+    next_rank = max((int(c.rank_position) for c in candidates), default=0) + 1
+    payload = [
+        {"scryfall_id": m.scryfall_id, "card_name": m.card_name, "score": m.score}
+        for m in matches
+    ]
+    candidate = ListingCardCandidate(
+        listing_id=listing_id,
+        source_method="faiss_proposal",
+        scryfall_id=proposed_id,
+        match_score=top.score,
+        confidence_score=min(0.45, float(top.score)),
+        rank_position=next_rank,
+        evidence_json={
+            "method": "faiss_proposal",
+            "faiss_matches": payload,
+            "faiss_score": top.score,
+            "pricing_eligible": False,
+            "pricing_reject_reason": "faiss_proposal_unverified",
+        },
+    )
+    session.add(candidate)
+    candidates.append(candidate)
+    return 1
 
 
 def apply_embedding_evidence(

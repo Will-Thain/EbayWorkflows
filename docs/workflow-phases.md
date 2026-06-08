@@ -152,19 +152,19 @@ See `card-recognition-architecture.md` for zone layout, artifact paths, and exte
 
 ### Current gate (OR — any one signal)
 
-A candidate is **image-verified** when **any** of the following reference the matched Scryfall card:
+A candidate is **image-verified** only when strict zone rules pass (`mtg_card_recognition.evidence`):
 
-- **OCR name** similarity ≥ `IMAGE_EVIDENCE_MIN_OCR_SIMILARITY` (default `0.60`)
-- **FAISS embedding** score ≥ `IMAGE_EVIDENCE_MIN_FAISS_SCORE` (default `0.55`) for the candidate's `scryfall_id`
-- **Set + collector** parsed from zone OCR (bottom strip) matching the card
-- **Set symbol** template match score ≥ `CARD_SET_SYMBOL_MIN_SCORE` (default `0.45`) matching the card's set code
-- **Mana colors** detected in mana-cost zone matching Scryfall `{WUBRG}` pips (confidence ≥ `IMAGE_EVIDENCE_MIN_MANA_CONFIDENCE`, default `0.30`)
+- **Hard verify:** bottom strip **set + collector** match the printing **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** set symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`)
+- **Strong symbol verify:** set symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees
+- **Lot crops:** `match_method=set_collector` with parsed identifiers (Phase 6)
 
-Phase 5 also attaches `zone_evidence` only when `region_zone_evidence_matches_card()` passes (same OR-style checks at 0.55 name threshold).
+OCR, FAISS, and mana **alone never verify**. At most **one candidate per listing** is verified for pricing/EV (`apply_per_listing_verification_gates`). Region attach uses `candidates_for_region_evidence` so name-only OCR does not bleed across reprints.
 
-### Planned gate (consensus — **blocked**)
+Evidence records `verification_listing_image_id`, `verification_detection_id`, and `verification_region_path` on attach.
 
-Pre-implementation review rejected the draft three-rule OR-variant. Target spec: **one printing per listing**, collector-first hard verify, mana/FAISS supporting only. Fix P0 structural bugs (reprint OCR bleed, EV sum across top-K, set-only match) before coding. Full spec: `card-recognition-architecture.md` § Target behavior — **approved spec**.
+Optional: `FAISS_PROPOSE_CANDIDATES=true` inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches (still subject to strict verify gate).
+
+Full spec: `card-recognition-architecture.md`.
 
 ### FAISS index
 

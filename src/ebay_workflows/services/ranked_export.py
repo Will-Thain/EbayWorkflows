@@ -28,6 +28,9 @@ class RankedListingRow:
     scoring_version: str
     top_card_name: str | None
     top_card_match_score: float | None
+    image_verification_source: str | None = None
+    verification_detection_id: str | None = None
+    verification_listing_image_id: str | None = None
     is_favorited: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,6 +50,9 @@ class RankedListingRow:
             "scoring_version": self.scoring_version,
             "top_card_name": self.top_card_name,
             "top_card_match_score": self.top_card_match_score,
+            "image_verification_source": self.image_verification_source,
+            "verification_detection_id": self.verification_detection_id,
+            "verification_listing_image_id": self.verification_listing_image_id,
             "is_favorited": self.is_favorited,
         }
 
@@ -90,10 +96,17 @@ def fetch_ranked_listings(
 
         top_name = None
         top_match = None
+        verification_source = None
+        verification_detection_id = None
+        verification_listing_image_id = None
         if top_candidate:
             if top_candidate.scryfall_card:
                 top_name = top_candidate.scryfall_card.name
             top_match = float(top_candidate.match_score)
+            evidence = top_candidate.evidence_json or {}
+            verification_source = evidence.get("image_verification_source")
+            verification_detection_id = evidence.get("verification_detection_id")
+            verification_listing_image_id = evidence.get("verification_listing_image_id")
 
         ranked.append(
             RankedListingRow(
@@ -112,6 +125,9 @@ def fetch_ranked_listings(
                 scoring_version=score.scoring_version,
                 top_card_name=top_name,
                 top_card_match_score=top_match,
+                image_verification_source=verification_source,
+                verification_detection_id=verification_detection_id,
+                verification_listing_image_id=verification_listing_image_id,
                 is_favorited=listing.id in favorite_ids,
             )
         )

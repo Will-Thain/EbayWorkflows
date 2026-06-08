@@ -29,6 +29,11 @@ def recognition_settings_from_app(settings: Settings) -> RecognitionSettings:
         openclip_model_name=settings.openclip_model_name,
         torch_device=settings.torch_device,
         embedding_batch_size=settings.embedding_batch_size,
+        align_min_confidence=settings.align_min_confidence,
+        verify_name_hard_min=settings.verify_name_hard_min,
+        verify_name_strong_min=settings.verify_name_strong_min,
+        verify_symbol_strong_min=settings.verify_symbol_strong_min,
+        faiss_propose_candidates=settings.faiss_propose_candidates,
     )
 
 
@@ -67,4 +72,5 @@ def coerce_recognition_settings(settings: Settings | RecognitionSettings) -> Rec
         verify_name_hard_min=getattr(settings, "verify_name_hard_min", 0.75),
         verify_name_strong_min=getattr(settings, "verify_name_strong_min", 0.88),
         verify_symbol_strong_min=getattr(settings, "verify_symbol_strong_min", 0.55),
+        faiss_propose_candidates=getattr(settings, "faiss_propose_candidates", True),
     )

@@ -45,15 +45,13 @@ Singles (Phase 5) and bulk lot crops (Phase 6) require **image evidence** before
 
 | Evidence source | Phase 5 singles | Phase 6 lot crops | Confirmation strength |
 |-----------------|-----------------|-------------------|------------------------|
-| OCR name match | yes | via crop title OCR | strong alone today; supporting under planned consensus gate |
-| FAISS embedding | yes | yes | proposer; weak alone on eBay photos (generic OpenCLIP) |
+| OCR name match | yes | via crop title OCR | supporting only; never standalone verify |
+| FAISS embedding | yes | yes | proposer (`FAISS_PROPOSE_CANDIDATES`); corroboration only for verify |
 | Set + collector (zone OCR) | yes | yes | **hard confirm** when collector parses |
 | Set symbol template | yes | yes | strong for reprint disambiguation |
-| Mana colors (zone) | yes | yes | supporting / tie-breaker |
+| Mana colors (zone) | yes | yes | supporting / tie-breaker only |
 
-Current implementation: **any one** row can set `image_verified`; Phase 4 may **sum prices** across all verified top-K candidates (bug — see architecture doc P0).
-
-Planned (blocked until P0 fixes): **one printing per listing** for pricing/EV; collector-first verification; mana/FAISS never alone (`card-recognition-architecture.md`).
+**Shipped:** one printing per listing for pricing/EV (`select_pricing_candidate`); strict consensus gate in `mtg_card_recognition.evidence`; provenance fields on region attach.
 
 Bulk **listing titles** never drive pricing alone (`bulk_lot_title_requires_image_evidence`). Phase 6 uses `crop_match_allowed_for_pricing` so individual detected cards can still receive unit prices when crop evidence confirms the match.
 

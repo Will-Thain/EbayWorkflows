@@ -57,6 +57,9 @@ class MatchDetail:
     pricing_reject_reason: str | None = None
     image_verified: bool = False
     image_verification_source: str | None = None
+    verification_listing_image_id: str | None = None
+    verification_detection_id: str | None = None
+    verification_region_path: str | None = None
 
 
 @dataclass(slots=True)
@@ -130,6 +133,9 @@ def _parse_match(candidate: Any) -> MatchDetail:
         pricing_reject_reason=evidence.get("pricing_reject_reason"),
         image_verified=bool(evidence.get("image_verified")),
         image_verification_source=evidence.get("image_verification_source"),
+        verification_listing_image_id=evidence.get("verification_listing_image_id"),
+        verification_detection_id=evidence.get("verification_detection_id"),
+        verification_region_path=evidence.get("verification_region_path"),
     )
 
 
@@ -157,6 +163,11 @@ def detection_for_match(detections: list[DetectionDetail], match: MatchDetail) -
     """Return index of the best detection to highlight for a match."""
     if not detections:
         return None
+
+    if match.verification_detection_id:
+        for idx, det in enumerate(detections):
+            if det.id == match.verification_detection_id:
+                return idx
 
     try:
         from rapidfuzz import fuzz

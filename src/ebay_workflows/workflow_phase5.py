@@ -27,7 +27,7 @@ from .models import (
     WorkflowStep,
 )
 from .services.card_regions import CardRegion
-from .services.embedding_index import apply_embedding_evidence, index_exists
+from .services.embedding_index import apply_embedding_evidence, index_exists, propose_embedding_candidates
 from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
 from .services.image_evidence import apply_per_listing_verification_gates, region_zone_evidence_matches_card
 from .services.progress_report import emit_progress
@@ -389,6 +389,13 @@ def run_phase5_ocr_verification(
                     )
 
                 if region_analysis.embedding_matches:
+                    embedding_updates += propose_embedding_candidates(
+                        session,
+                        listing_image.listing_id,
+                        candidates,
+                        region_analysis.embedding_matches,
+                        settings,
+                    )
                     embedding_updates += apply_embedding_evidence(
                         candidates, region_analysis.embedding_matches
                     )

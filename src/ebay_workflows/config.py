@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     card_set_symbol_match_enabled: bool = Field(default=True, alias="CARD_SET_SYMBOL_MATCH_ENABLED")
     card_set_symbol_min_score: float = Field(default=0.45, alias="CARD_SET_SYMBOL_MIN_SCORE")
     card_mana_cost_enabled: bool = Field(default=True, alias="CARD_MANA_COST_ENABLED")
+    align_min_confidence: float = Field(default=0.35, alias="ALIGN_MIN_CONFIDENCE")
+    verify_name_hard_min: float = Field(default=0.75, alias="VERIFY_NAME_HARD_MIN")
+    verify_name_strong_min: float = Field(default=0.88, alias="VERIFY_NAME_STRONG_MIN")
+    verify_symbol_strong_min: float = Field(default=0.55, alias="VERIFY_SYMBOL_STRONG_MIN")
+    faiss_propose_candidates: bool = Field(default=True, alias="FAISS_PROPOSE_CANDIDATES")
 
     global_requests_per_minute_cap: int = Field(alias="GLOBAL_REQUESTS_PER_MINUTE_CAP")
     enable_provider_policy_checks: bool = Field(default=True, alias="ENABLE_PROVIDER_POLICY_CHECKS")

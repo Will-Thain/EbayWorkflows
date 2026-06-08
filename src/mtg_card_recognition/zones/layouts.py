@@ -53,6 +53,21 @@ DFC_FRONT_ZONES: dict[str, ZoneRect] = {
 }
 
 
+def layout_from_scryfall_payload(payload: dict[str, Any] | None) -> str | None:
+    """Map Scryfall card JSON to a zone layout family when metadata is known."""
+    if not payload:
+        return None
+    layout = str(payload.get("layout") or "").lower()
+    frame = str(payload.get("frame") or "").lower()
+    if layout in {"transform", "modal_dfc", "double_faced_token", "reversible_card"}:
+        return "dfc_front"
+    if frame in {"1993", "1997", "2003"} or payload.get("border_color") == "white" and frame == "2003":
+        return "old"
+    if layout in {"split", "adventure", "planar", "scheme", "vanguard"}:
+        return "modern"
+    return None
+
+
 def detect_frame_layout(image) -> str:
     """
     Heuristic frame detector: modern (default), old border, or DFC front face.
@@ -147,6 +162,8 @@ def prepare_card_for_zones(
     settings: RecognitionSettings,
     *,
     stem: str | None = None,
+    layout_hint: str | None = None,
+    scryfall_payload: dict[str, Any] | None = None,
 ) -> tuple[CardZoneCrops, dict[str, Any]]:
     """Align (optional), detect frame layout, and extract all zone crops."""
     path = Path(card_path)
@@ -183,7 +200,16 @@ def prepare_card_for_zones(
     if image is None:
         return result, meta
 
-    layout = detect_frame_layout(image)
+    scryfall_layout = layout_from_scryfall_payload(scryfall_payload)
+    if layout_hint:
+        layout = layout_hint
+        meta["frame_layout_source"] = "hint"
+    elif scryfall_layout:
+        layout = scryfall_layout
+        meta["frame_layout_source"] = "scryfall_payload"
+    else:
+        layout = detect_frame_layout(image)
+        meta["frame_layout_source"] = "heuristic"
     result.frame_layout = layout
     meta["frame_layout"] = layout
     zone_map = zones_for_layout(layout)

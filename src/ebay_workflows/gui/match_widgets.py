@@ -201,8 +201,14 @@ class MatchRowWidget(QWidget):
         ]
         if match.price_type:
             meta_lines.append(f"Price type: {match.price_type}")
+        if match.image_verified and match.image_verification_source:
+            meta_lines.append(f"Verified by: {match.image_verification_source}")
         if not match.pricing_eligible and match.pricing_reject_reason:
             meta_lines.append(f"Pricing: excluded ({match.pricing_reject_reason})")
+        if match.verification_detection_id:
+            meta_lines.append(f"Proof detection: {match.verification_detection_id[:8]}…")
+        if match.verification_region_path:
+            meta_lines.append(f"Proof crop: {match.verification_region_path}")
         if match.ocr_title:
             ocr_line = f"OCR: {match.ocr_title}"
             if match.ocr_similarity is not None:

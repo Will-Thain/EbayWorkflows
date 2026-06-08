@@ -27,10 +27,14 @@ def prepare_card_for_zones(
     settings: Settings,
     *,
     stem: str | None = None,
+    layout_hint: str | None = None,
+    scryfall_payload: dict | None = None,
 ):
     return _layouts.prepare_card_for_zones(
         card_path,
         zone_dir,
         coerce_recognition_settings(settings),
         stem=stem,
+        layout_hint=layout_hint,
+        scryfall_payload=scryfall_payload,
     )

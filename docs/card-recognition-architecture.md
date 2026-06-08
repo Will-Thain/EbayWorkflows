@@ -14,7 +14,8 @@ Operational runbooks: `runbook-local.md`, `large-scale-ingest.md`.
 | OCR reprint bleed fix | **Shipped** — `candidates_for_region_evidence` |
 | Evidence provenance (`verification_*` on attach) | **Shipped** — Phase 5 region persist |
 | `zones_available` computation | **Shipped** — `zones/signals.compute_zones_available` |
-| Embedding-based candidate proposal | **Not built** — FAISS/Milo corroborate Phase 2 IDs only today |
+| FAISS candidate proposal (`FAISS_PROPOSE_CANDIDATES`) | **Shipped** — Phase 5 inserts `faiss_proposal` when top-1 ∉ title matches |
+| Milo / alternate embedder proposal | **Not built** |
 | PaddleOCR on zones | **Planned** — not wired (`ocr_extract.py` still Tesseract) |
 | Threshold calibration (0.80 / 0.65) | **Not validated** — do not copy into code without labeled eBay crops |
 

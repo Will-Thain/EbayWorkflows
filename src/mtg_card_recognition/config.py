@@ -37,3 +37,4 @@ class RecognitionSettings:
     verify_name_hard_min: float = 0.75
     verify_name_strong_min: float = 0.88
     verify_symbol_strong_min: float = 0.55
+    faiss_propose_candidates: bool = True
