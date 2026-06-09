@@ -1,6 +1,6 @@
 # Re-run Phase 5 after faiss_proposal fix, then phase 3, 4, and validation.
 Set-Location $PSScriptRoot/..
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 . ./scripts/activate-dev.ps1
 
