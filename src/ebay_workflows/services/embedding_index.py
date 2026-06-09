@@ -528,6 +528,16 @@ def propose_embedding_candidates(
     if session.get(ScryfallCard, proposed_id) is None:
         return 0
 
+    existing_faiss = session.execute(
+        select(ListingCardCandidate.id).where(
+            ListingCardCandidate.listing_id == listing_id,
+            ListingCardCandidate.scryfall_id == proposed_id,
+            ListingCardCandidate.source_method == "faiss_proposal",
+        ).limit(1)
+    ).first()
+    if existing_faiss is not None:
+        return 0
+
     next_rank = max((int(c.rank_position) for c in candidates), default=0) + 1
     payload = [
         {"scryfall_id": m.scryfall_id, "card_name": m.card_name, "score": m.score}
@@ -549,6 +559,7 @@ def propose_embedding_candidates(
         },
     )
     session.add(candidate)
+    session.flush()
     candidates.append(candidate)
     return 1
 
