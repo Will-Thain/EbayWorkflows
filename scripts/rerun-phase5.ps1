@@ -18,18 +18,30 @@ function Log($msg) {
     Add-Content -Path $log -Value $line
 }
 
+function Invoke-PhaseCli {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
+    $output = & $py -m ebay_workflows.cli @CliArgs 2>&1
+    foreach ($line in $output) {
+        Log ([string]$line)
+    }
+    return $LASTEXITCODE
+}
+
+Log "Clearing stale workflow steps (if any)"
+$null = Invoke-PhaseCli clear-stale-workflows --yes
+
 Log "Starting phase5-verify-ocr (real OCR + embedding match)"
-& $py -m ebay_workflows.cli phase5-verify-ocr --use-real-ocr --use-embedding-match 2>&1 | ForEach-Object { Log $_ }
-if ($LASTEXITCODE -ne 0) { Log "Phase 5 failed with exit $LASTEXITCODE"; exit $LASTEXITCODE }
+$code = Invoke-PhaseCli phase5-verify-ocr --use-real-ocr --use-embedding-match
+if ($code -ne 0) { Log "Phase 5 failed with exit $code"; exit $code }
 
 Log "Starting phase3-join-prices"
-& $py -m ebay_workflows.cli phase3-join-prices 2>&1 | ForEach-Object { Log $_ }
-if ($LASTEXITCODE -ne 0) { Log "Phase 3 failed with exit $LASTEXITCODE"; exit $LASTEXITCODE }
+$code = Invoke-PhaseCli phase3-join-prices
+if ($code -ne 0) { Log "Phase 3 failed with exit $code"; exit $code }
 
 Log "Starting phase4-rank --hybrid"
-& $py -m ebay_workflows.cli phase4-rank --hybrid 2>&1 | ForEach-Object { Log $_ }
-if ($LASTEXITCODE -ne 0) { Log "Phase 4 failed with exit $LASTEXITCODE"; exit $LASTEXITCODE }
+$code = Invoke-PhaseCli phase4-rank --hybrid
+if ($code -ne 0) { Log "Phase 4 failed with exit $code"; exit $code }
 
 Log "Running post-reanalyze-validation.ps1"
-& ./scripts/post-reanalyze-validation.ps1 2>&1 | ForEach-Object { Log $_ }
+& ./scripts/post-reanalyze-validation.ps1 2>&1 | ForEach-Object { Log ([string]$_) }
 Log "Phase 5 re-run pipeline completed."
