@@ -4,7 +4,31 @@ Track incomplete workflow elements ranked by priority.
 
 **Legend:** ✅ Done · 🟡 Partial · ⏸ Blocked / in progress · 📋 Documented only
 
-**Last updated:** 2026-06-09 (`main`; quick-win pass + reanalyze in flight)
+**Last updated:** 2026-06-09 (post-reanalyze run; Phase 5 partial failure)
+
+---
+
+## Reanalyze result (2026-06-09)
+
+`reanalyze-matching.ps1 -SkipPhase6` finished in **~2.85 hours** (exit 0). Phases 2, 3, and 4 completed; **Phase 5 aborted** mid-run.
+
+| Metric | Count |
+|--------|------:|
+| Listings | 2,682 |
+| Listing images | 11,650 |
+| Card candidates | 166 |
+| OCR results | 0 |
+| Image detections | 0 |
+| Verified candidates | 0 |
+| Pricing-eligible | 78 |
+| Scored listings | 2,682 |
+| rank_value > 0 | 0 |
+
+**Phase 5 failure:** `UniqueViolation` on `uq_listing_scryfall_source` inserting duplicate `faiss_proposal` candidate → session rollback; OCR/detections not persisted.
+
+**Export:** PowerShell `-o` is ambiguous inside `Invoke-Cli` — scripts now use `--output` (fix committed locally).
+
+**Next:** Fix `propose_embedding_candidates` upsert/dedup, re-run Phase 5 only (`phase5-verify-ocr --use-real-ocr --use-embedding-match`), then phase3 → phase4 → validation.
 
 ---
 
@@ -13,7 +37,7 @@ Track incomplete workflow elements ranked by priority.
 | # | Item | Status | Notes |
 |---|------|--------|-------|
 | 1 | `finish-ranking.ps1` + `finish_ranking.py` | ✅ | Phase4-only finish on CPU |
-| 2 | `reanalyze-matching.ps1` CLI fix | ✅ | Always `python -m ebay_workflows.cli`; `clear-match-data -y` |
+| 2 | `reanalyze-matching.ps1` CLI fix | ✅ | `python -m`; `clear-match-data -y`; `--output` for export |
 | 3 | Typed HTTP errors — Cardmarket bulk | ✅ | `raise_for_http_response` + retry |
 | 4 | `finish_ranking_debug.py` | ✅ | Operator-only; documented in `runbook-local.md` §17f |
 
@@ -41,11 +65,11 @@ Track incomplete workflow elements ranked by priority.
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 16 | Opportunities tab useful data | ⏸ | Blocked until Phase 5 verify produces candidates |
-| 17 | Phase 6 lot detection | ⏸ | Run after reanalyze with `TORCH_DEVICE=cpu` |
+| 16 | Opportunities tab useful data | ⏸ | 0 verified after reanalyze |
+| 17 | Phase 6 lot detection | ⏸ | After Phase 5 succeeds on CPU |
 | 18 | GUI dark theme / logs / thumbnails | ✅ | Shipped PR #5 |
 | 19 | Headless resumable pipeline in GUI | 📋 | CLI `run-resumable-pipeline` only |
-| 20 | Full reanalyze on 3.12 venv | ⏸ | **In progress** — `./scripts/reanalyze-matching.ps1 -SkipPhase6` |
+| 20 | Full reanalyze on 3.12 venv | 🟡 | Ran ~2.85h; Phase 5 failed — partial re-run needed |
 
 ---
 
@@ -53,78 +77,43 @@ Track incomplete workflow elements ranked by priority.
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 21 | GitHub default branch → `main` | 📋 | Manual: GitHub → Settings → Default branch → `main` (`gh` not on this machine) |
+| 21 | GitHub default branch → `main` | 📋 | Manual: GitHub → Settings → Default branch → `main` |
 | 22 | `documentation-status.md` sync | ✅ | Points at `main` and this doc |
-| 23 | Post-reanalyze operational metrics | ⏸ | Update snapshot after reanalyze completes — see checklist below |
+| 23 | Post-reanalyze operational metrics | ✅ | Snapshot recorded above; export blocked until `--output` fix deployed |
 | 24 | Stale remote branches | 📋 | Review/delete `milestone-*`, old `feature/*` when convenient |
 
 ---
 
-## Reanalyze in progress (2026-06-09)
+## After Phase 5 re-run — operator checklist
 
-Started with `TORCH_DEVICE=cpu`, `-SkipPhase6`. Monitor:
+Run after fixing Phase 5 `faiss_proposal` dedup and re-running OCR:
 
-```powershell
-Get-Content ./data/exports/reanalyze-matching.log -Wait -Tail 20
-.venv\Scripts\python.exe -m ebay_workflows.cli monitor-pipeline
-.venv\Scripts\python.exe -m ebay_workflows.cli match-stats
-```
+1. **Phase 5 only**
+   ```powershell
+   $env:TORCH_DEVICE = "cpu"
+   .venv\Scripts\python.exe -m ebay_workflows.cli phase5-verify-ocr --use-real-ocr --use-embedding-match
+   .venv\Scripts\python.exe -m ebay_workflows.cli phase3-join-prices
+   .venv\Scripts\python.exe -m ebay_workflows.cli phase4-rank --hybrid
+   ```
 
-Log file: `data/exports/reanalyze-matching.log`
-
----
-
-## After reanalyze completes — operator checklist
-
-Run in order when Phase 5 → 3 → 4 finish and the log shows `Re-analyze matching completed.`:
-
-1. **Validation export**
+2. **Validation export**
    ```powershell
    .\scripts\post-reanalyze-validation.ps1
    ```
-   Produces `data/exports/ranked-validation.json` + integrity check.
+3. **If verified still 0** — triage Tesseract, FAISS coverage, `VERIFY_*` thresholds, `evidence_json.pricing_reject_reason`.
 
-2. **Update this doc** — replace the pipeline snapshot table with fresh counts:
-   - verified candidates, pricing-eligible, rank_value > 0
-   - mark P3 #16 / #20 / P4 #23 ✅ or note failure mode
-
-3. **If verified > 0** — open GUI Opportunities tab; confirm thumbnails and ranked rows.
-
-4. **If verified still 0** — triage:
-   - Tesseract on PATH (`validate-env`)
-   - FAISS index coverage (`FAISS_INDEX_READY`)
-   - `VERIFY_*` thresholds in `.env`
-   - sample `evidence_json.pricing_reject_reason` in DB
-
-5. **Optional Phase 6** (only after step 1–4 stable):
+4. **Optional Phase 6** (after Phase 5 stable):
    ```powershell
    $env:TORCH_DEVICE = "cpu"
    .venv\Scripts\python.exe -m ebay_workflows.cli phase6-detect-lots --use-real-detection
    .venv\Scripts\python.exe -m ebay_workflows.cli phase4-rank --hybrid
    ```
 
-6. **Refresh Cardmarket bulk** if stale (validate-env warns):
+5. **Refresh Cardmarket bulk** if stale (validate-env warns):
    ```powershell
    .venv\Scripts\python.exe -m ebay_workflows.cli download-cardmarket-bulk -o ./data/cardmarket/prices.csv
    .venv\Scripts\python.exe -m ebay_workflows.cli sync-cardmarket
    ```
-
----
-
-## Latest pipeline snapshot (pre-reanalyze baseline)
-
-From finish-ranking only (Phase 5 not re-run on 3.12 venv):
-
-| Metric | Count |
-|--------|------:|
-| Listings | 2,682 |
-| Listing images | 11,650 |
-| OCR results | 0 (cleared before reanalyze) |
-| Verified candidates | 0 |
-| Pricing-eligible | 0 |
-| rank_value > 0 | 0 |
-
-**Replace this table after reanalyze validation.**
 
 ---
 

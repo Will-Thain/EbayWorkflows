@@ -42,7 +42,7 @@ if (-not $SkipPhase6) {
 }
 Invoke-Cli phase4-rank --hybrid
 New-Item -ItemType Directory -Force -Path ./data/exports | Out-Null
-Invoke-Cli export-rankings -o ./data/exports/ranked-large-ingest.json
+Invoke-Cli export-rankings --output ./data/exports/ranked-large-ingest.json
 Invoke-Cli data-integrity-check
 
 Write-Host "Re-analyze matching completed."

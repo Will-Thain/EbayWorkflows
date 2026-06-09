@@ -26,7 +26,7 @@ Write-Host "`n=== Match statistics ==="
 Invoke-Cli match-stats
 
 Write-Host "`n=== Export rankings ==="
-Invoke-Cli export-rankings -o $exportPath
+Invoke-Cli export-rankings --output $exportPath
 
 Write-Host "`n=== Data integrity ==="
 Invoke-Cli data-integrity-check
