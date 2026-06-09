@@ -1,6 +1,6 @@
 # Development Roadmap
 
-**Status:** Milestones 0–6 **[Shipped]**; Milestone 7 (package split) in progress. Tags: `documentation-status.md`.
+**Status:** Milestones 0–7 **[Shipped]**. Tags: `documentation-status.md`.
 
 ## Delivery Strategy
 
@@ -78,14 +78,15 @@ Exit criteria:
 
 See `gui-application.md` and `gui-build-prerequisites.md`.
 
-## Milestone 7: Recognition package extraction **[Shipped]** (monorepo) / **[Future]** (standalone repo)
+## Milestone 7: Recognition package extraction **[Shipped]** (standalone repo ready)
 
-- `src/mtg_card_recognition/` extractable library with P0 verification fixes
-- eBay shims + `RecognitionSettings` adapter
-- `packages/mtg-card-recognition/` packaging scaffold
+- **`mtg-card-recognition`** — sibling repo [`../mtg-card-recognition`](https://github.com/Will-Thain/mtg-card-recognition) (v0.2.0+), FAISS core extracted
+- eBay shims + `RecognitionSettings` adapter remain in EbayWorkflows
+- Dev install: `scripts/install-dev.ps1` (editable sibling clone, not a pyproject path dep)
+- Remote: https://github.com/Will-Thain/mtg-card-recognition
 
 Exit criteria:
-- tests pass against package imports; standalone repo split per `packages/mtg-card-recognition/README.md` **[Future]**
+- tests pass against package imports; push to remote per REPO_BOOTSTRAP **[Ready]**
 
 ## Testing Strategy
 

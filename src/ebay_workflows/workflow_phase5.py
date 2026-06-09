@@ -7,29 +7,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rapidfuzz import fuzz
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from mtg_card_recognition.evidence.attach import (
     candidates_for_region_evidence,
     merge_verification_provenance,
+    update_candidate_ocr_confidence,
     zone_evidence_with_provenance,
 )
-
 from .config import Settings
 from .models import (
     ImageDetection,
+    Listing,
     ListingCardCandidate,
     ListingImage,
     OcrResult,
     WorkflowRun,
     WorkflowStep,
 )
-from .services.card_regions import CardRegion
+from mtg_card_recognition.zones.regions import CardRegion
 from .services.embedding_index import apply_embedding_evidence, index_exists, propose_embedding_candidates
 from .services.image_analysis import ImageAnalysisResult, analyze_listing_image
 from .services.image_evidence import apply_per_listing_verification_gates, region_zone_evidence_matches_card
+from .services.match_event_log import log_positive_match, match_log_path
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
 from .workflow_errors import fail_workflow_step
@@ -63,53 +64,6 @@ def _clear_card_regions(session: Session, listing_image_id: Any) -> None:
     if existing_detection_ids:
         session.execute(delete(OcrResult).where(OcrResult.detection_id.in_(existing_detection_ids)))
         session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
-
-
-def _update_candidate_confidence(
-    candidate: ListingCardCandidate,
-    ocr_title: str,
-    *,
-    listing_image_id: str | None = None,
-    detection_id: str | None = None,
-    region_path: str | None = None,
-) -> bool:
-    """Apply OCR from one crop to a single candidate. Returns True if updated."""
-    if not candidate.scryfall_card or not candidate.scryfall_card.name:
-        return False
-    similarity = fuzz.WRatio(ocr_title.lower(), candidate.scryfall_card.name.lower()) / 100.0
-    if similarity < 0.55:
-        return False
-
-    evidence = dict(candidate.evidence_json or {})
-    existing = evidence.get("ocr_verification") or {}
-    existing_sim = float(existing.get("similarity", 0.0))
-    if similarity <= existing_sim:
-        return False
-
-    confidence = float(candidate.confidence_score)
-    if similarity >= 0.8:
-        confidence = min(1.0, confidence + 0.1)
-
-    ocr_block: dict[str, Any] = {
-        "ocr_title": ocr_title,
-        "similarity": similarity,
-        "method": "rapidfuzz_wratio",
-    }
-    if listing_image_id and detection_id and region_path:
-        ocr_block["listing_image_id"] = listing_image_id
-        ocr_block["detection_id"] = detection_id
-        ocr_block["region_image_path"] = region_path
-        evidence = merge_verification_provenance(
-            evidence,
-            listing_image_id=listing_image_id,
-            detection_id=detection_id,
-            region_path=region_path,
-        )
-
-    evidence["ocr_verification"] = ocr_block
-    candidate.confidence_score = confidence
-    candidate.evidence_json = evidence
-    return True
 
 
 def _attach_zone_evidence_to_candidate(
@@ -175,7 +129,7 @@ def _apply_region_evidence_to_candidates(
 
     updated = 0
     for candidate in ocr_targets:
-        if ocr_title and _update_candidate_confidence(
+        if ocr_title and update_candidate_ocr_confidence(
             candidate,
             ocr_title,
             listing_image_id=listing_image_id,
@@ -353,6 +307,10 @@ def run_phase5_ocr_verification(
             candidates = session.execute(
                 select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_image.listing_id)
             ).scalars().all()
+            listing = session.get(Listing, listing_image.listing_id)
+            event_log = match_log_path(settings)
+            listing_id_str = str(listing_image.listing_id)
+            external_listing_id = listing.external_listing_id if listing else None
 
             for region_analysis in analysis.regions:
                 region = region_analysis.region
@@ -389,7 +347,53 @@ def run_phase5_ocr_verification(
                         settings=settings,
                     )
 
+                if zone_evidence:
+                    bottom = zone_evidence.get("bottom_parsed") or {}
+                    set_code = bottom.get("set_code")
+                    collector = bottom.get("collector_number")
+                    if set_code and collector:
+                        ocr_title = persist.best_title if persist is not None else None
+                        if not ocr_title:
+                            title_field = fields.get("title")
+                            ocr_title = title_field[0] if title_field else None
+                        zone_targets = candidates_for_region_evidence(
+                            candidates,
+                            ocr_title=ocr_title,
+                            fields=fields,
+                            zone_evidence=zone_evidence,
+                        )
+                        for target in zone_targets:
+                            card = target.scryfall_card
+                            log_positive_match(
+                                event="zone_set_collector",
+                                phase=5,
+                                listing_id=listing_id_str,
+                                external_listing_id=external_listing_id,
+                                listing_image_id=str(listing_image.id),
+                                scryfall_id=str(target.scryfall_id) if target.scryfall_id else None,
+                                card_name=card.name if card else None,
+                                source_method=getattr(target, "source_method", None),
+                                set_code=set_code,
+                                collector_number=collector,
+                                log_path=event_log,
+                            )
+
                 if region_analysis.embedding_matches:
+                    top = region_analysis.embedding_matches[0]
+                    top_score = float(getattr(top, "score", 0.0))
+                    if top_score >= settings.image_evidence_min_faiss_score:
+                        log_positive_match(
+                            event="faiss_search",
+                            phase=5,
+                            listing_id=listing_id_str,
+                            external_listing_id=external_listing_id,
+                            listing_image_id=str(listing_image.id),
+                            scryfall_id=getattr(top, "scryfall_id", None),
+                            card_name=getattr(top, "card_name", None),
+                            match_score=top_score,
+                            source_method="faiss_search",
+                            log_path=event_log,
+                        )
                     embedding_updates += propose_embedding_candidates(
                         session,
                         listing_image.listing_id,
@@ -398,7 +402,10 @@ def run_phase5_ocr_verification(
                         settings,
                     )
                     embedding_updates += apply_embedding_evidence(
-                        candidates, region_analysis.embedding_matches
+                        candidates,
+                        region_analysis.embedding_matches,
+                        listing_id=listing_image.listing_id,
+                        settings=settings,
                     )
 
         def _run_parallel_real_ocr(images: list[ListingImage]) -> list[ImageAnalysisResult]:
@@ -481,6 +488,31 @@ def run_phase5_ocr_verification(
             all_candidates,
             settings,
         )
+        event_log = match_log_path(settings)
+        listing_ids = {candidate.listing_id for candidate in all_candidates}
+        listings_by_id = {}
+        if listing_ids:
+            rows = session.execute(select(Listing).where(Listing.id.in_(listing_ids))).scalars().all()
+            listings_by_id = {row.id: row for row in rows}
+        for candidate in all_candidates:
+            evidence = candidate.evidence_json or {}
+            if not evidence.get("image_verified"):
+                continue
+            listing = listings_by_id.get(candidate.listing_id)
+            card = candidate.scryfall_card
+            log_positive_match(
+                event="image_verified",
+                phase=5,
+                listing_id=str(candidate.listing_id),
+                external_listing_id=listing.external_listing_id if listing else None,
+                scryfall_id=str(candidate.scryfall_id) if candidate.scryfall_id else None,
+                card_name=card.name if card else None,
+                match_score=float(candidate.match_score or 0.0),
+                source_method=candidate.source_method,
+                verification_source=evidence.get("image_verification_source"),
+                pricing_eligible=evidence.get("pricing_eligible"),
+                log_path=event_log,
+            )
 
         step.status = "succeeded"
         step.finished_at = _now()

@@ -10,8 +10,9 @@ from mtg_card_recognition.pipeline.image_analysis import (
 
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
+from mtg_card_recognition.zones.gate import assess_visible_card_regions
+
 from .embedding_index import EmbeddingMatch, index_exists, search_similar_cards
-from .image_gate import assess_visible_card_regions
 
 
 def analyze_listing_image(

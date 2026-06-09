@@ -2,11 +2,10 @@
 
 ## Decision Summary
 
-Production matching is a **hybrid propose-then-confirm** pipeline (see `card-recognition-architecture.md`):
+Production matching is a **hybrid propose-then-confirm** pipeline. Recognition library detail: **[mtg-card-recognition `docs/architecture.md`](../mtg-card-recognition/docs/architecture.md)** and [`docs/library-stack.md`](../mtg-card-recognition/docs/library-stack.md).
 
-- **Propose [Shipped]:** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`, `source_method=faiss_proposal`)
-- **Propose [Future]:** Milo HF catalog as alternate embedder/proposer
-- **Confirm [Shipped]:** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**; one verified winner per listing
+- **Propose [Shipped]:** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`)
+- **Confirm [Shipped]:** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**
 
 Core dependencies:
 
@@ -28,8 +27,8 @@ Zone fields (title, set code, collector number, symbol, mana) disambiguate what 
 
 ## Implementation Pattern (current)
 
-1. detect card regions and normalize crops with OpenCV (`image_gate.py`)
-2. align card, detect frame layout, extract zone strips (`mtg_card_recognition.zones` via eBay shims)
+1. detect card regions and normalize crops with OpenCV (`mtg_card_recognition.zones`)
+2. align card, detect frame layout, extract zone strips (`mtg_card_recognition.zones`)
 3. OCR name/bottom/type-line; match set symbol; detect mana pips (supporting only)
 4. embed art-zone crop with OpenCLIP; query FAISS for top-K; optional `faiss_proposal` candidate
 5. attach `zone_evidence` with provenance; `candidates_for_region_evidence` prevents reprint OCR bleed

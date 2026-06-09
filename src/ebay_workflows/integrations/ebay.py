@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterator
+from urllib.parse import quote
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -23,11 +25,20 @@ EBAY_API_HOSTS = {
 }
 
 
+def _api_host(settings: Settings) -> str:
+    return EBAY_API_HOSTS["sandbox" if settings.ebay_use_sandbox else "production"]
+
+
 def _api_hosts(settings: Settings) -> tuple[str, str]:
-    host = EBAY_API_HOSTS["sandbox" if settings.ebay_use_sandbox else "production"]
+    host = _api_host(settings)
     oauth_url = f"{host}/identity/v1/oauth2/token"
     browse_search_url = f"{host}/buy/browse/v1/item_summary/search"
     return oauth_url, browse_search_url
+
+
+def _browse_item_url(settings: Settings, item_id: str) -> str:
+    encoded = quote(item_id, safe="")
+    return f"{_api_host(settings)}/buy/browse/v1/item/{encoded}"
 
 
 @dataclass
@@ -41,6 +52,21 @@ class ListingRecord:
     condition_text: str | None
     image_urls: list[str]
     raw_payload: dict
+    description_text: str | None = None
+
+
+def _normalize_description_text(value: str) -> str:
+    """Strip HTML and collapse whitespace from eBay item descriptions."""
+    without_tags = re.sub(r"<[^>]+>", " ", value)
+    return re.sub(r"\s+", " ", without_tags).strip()
+
+
+def _extract_description_from_item_payload(item: dict) -> str | None:
+    for key in ("description", "shortDescription"):
+        raw = item.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return _normalize_description_text(raw)
+    return None
 
 
 class RateLimiter:
@@ -154,6 +180,7 @@ def _extract_record(item: dict) -> ListingRecord:
         condition_text=item.get("condition"),
         image_urls=image_urls,
         raw_payload=item,
+        description_text=_extract_description_from_item_payload(item),
     )
 
 
@@ -197,6 +224,67 @@ def _browse_search_page(
             params=params,
         )
         return response, token
+
+
+def _browse_item_page(
+    client: httpx.Client,
+    *,
+    settings: Settings,
+    limiter: RateLimiter,
+    item_id: str,
+    headers: dict[str, str],
+) -> tuple[httpx.Response, str]:
+    item_url = _browse_item_url(settings, item_id)
+    token = headers["Authorization"].removeprefix("Bearer ")
+    limiter.wait()
+    try:
+        response = _request_with_retry(client, "GET", item_url, headers=headers)
+        return response, token
+    except AuthenticationError:
+        token = _oauth_token(settings, client, limiter)
+        headers["Authorization"] = f"Bearer {token}"
+        limiter.wait()
+        response = _request_with_retry(client, "GET", item_url, headers=headers)
+        return response, token
+
+
+def fetch_item_description(settings: Settings, item_id: str) -> str | None:
+    """Fetch full item description from eBay Browse item detail (future ingests)."""
+    if not settings.enable_ebay_api or not item_id:
+        return None
+    if settings.ebay_requests_per_minute is None:
+        raise ValueError("EBAY_REQUESTS_PER_MINUTE is required when eBay API is enabled.")
+
+    limiter = _ebay_limiter(settings)
+    with httpx.Client(timeout=30) as client:
+        token = _oauth_token(settings, client, limiter)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-EBAY-C-MARKETPLACE-ID": settings.ebay_marketplace_id,
+        }
+        response, _token = _browse_item_page(
+            client,
+            settings=settings,
+            limiter=limiter,
+            item_id=item_id,
+            headers=headers,
+        )
+        if not response.is_success:
+            return None
+        payload = response.json()
+        return _extract_description_from_item_payload(payload)
+
+
+def enrich_record_description(settings: Settings, record: ListingRecord) -> ListingRecord:
+    """Attach item description when search summary did not include one."""
+    if not settings.phase1_fetch_item_description:
+        return record
+    if record.description_text:
+        return record
+    description = fetch_item_description(settings, record.external_listing_id)
+    if not description:
+        return record
+    return replace(record, description_text=description)
 
 
 def verify_ebay_credentials(settings: Settings) -> str:

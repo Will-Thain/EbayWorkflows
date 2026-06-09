@@ -3,7 +3,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from ebay_workflows.exceptions import AuthenticationError
 from ebay_workflows.integrations.ebay import _browse_search_page, _ebay_limiter
@@ -34,7 +33,6 @@ def test_browse_search_refreshes_token_after_401() -> None:
     client = MagicMock()
     headers = {"Authorization": "Bearer stale-token"}
 
-    first = httpx.Response(401, request=httpx.Request("GET", "https://api.ebay.com/search"))
     second = httpx.Response(200, request=httpx.Request("GET", "https://api.ebay.com/search"))
     second._content = b'{"itemSummaries": []}'
 

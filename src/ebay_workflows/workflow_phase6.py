@@ -22,6 +22,14 @@ from .models import (
     WorkflowRun,
     WorkflowStep,
 )
+from mtg_card_recognition.identifiers import (
+    ParsedCardIdentifiers,
+    build_set_collector_index,
+    normalize_collector_number,
+    normalize_set_code,
+)
+from mtg_card_recognition.title.match import CardMatchEntry, ScryfallTitleIndex
+
 from .services.bulk_lot_detection import (
     detect_lot_cards_from_image,
     detected_lot_cards_to_payload,
@@ -29,11 +37,10 @@ from .services.bulk_lot_detection import (
 from .services.currency import listing_total_cost_base
 from .services.ev_guardrails import cap_ev_adjusted, crop_match_allowed_for_pricing, sanitize_unit_price
 from .services.listing_filters import is_bulk_lot_title
-from .services.progress_report import emit_progress
-from .services.card_identifiers import ParsedCardIdentifiers, build_set_collector_index, normalize_collector_number, normalize_set_code
 from .services.listing_condition import adjust_price_for_listing_condition
+from .services.match_event_log import log_positive_match, match_log_path
+from .services.progress_report import emit_progress
 from .services.lot_crop_match import resolve_lot_crop_match
-from .services.title_match import CardMatchEntry, ScryfallTitleIndex
 from .services.workflow_progress import publish_step_progress
 from .workflow_errors import fail_workflow_step
 
@@ -167,6 +174,30 @@ def _process_lot_cards_for_image(
             settings,
             faiss_enabled=faiss_enabled,
         )
+        if card_match:
+            log_positive_match(
+                event="lot_crop_match",
+                phase=6,
+                listing_id=str(listing.id),
+                external_listing_id=listing.external_listing_id,
+                listing_image_id=str(listing_image.id),
+                scryfall_id=str(card_match.id),
+                card_name=card_match.name,
+                match_score=float(match_score or 0.0),
+                source_method=match_evidence.get("match_method"),
+                ocr_title=title,
+                log_path=match_log_path(settings),
+                **{
+                    key: match_evidence[key]
+                    for key in (
+                        "faiss_verified",
+                        "faiss_override",
+                        "faiss_only_match",
+                        "lot_crop_rejected",
+                    )
+                    if key in match_evidence
+                },
+            )
         unit_price = Decimal("0")
         if card_match:
             allowed, _ = crop_match_allowed_for_pricing(

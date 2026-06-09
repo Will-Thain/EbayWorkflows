@@ -13,3 +13,6 @@ build/
 *.egg-info/
 *.db
 data/
+# Sibling clone only — never vendored here
+packages/mtg-card-recognition/
+src/mtg_card_recognition/

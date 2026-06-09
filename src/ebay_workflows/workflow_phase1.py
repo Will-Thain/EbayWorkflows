@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .integrations.ebay import ListingRecord, iter_listing_pages
+from .integrations.ebay import ListingRecord, enrich_record_description, iter_listing_pages
 from .models import Listing, ListingImage, WorkflowRun, WorkflowStep
 from .services.image_cache import download_many_to_cache
 from .services.pipeline_lock import pipeline_run_lock
@@ -38,6 +38,7 @@ def _load_mock_listings(path: str) -> list[ListingRecord]:
                 condition_text=item.get("condition_text"),
                 image_urls=item.get("image_urls", []),
                 raw_payload=item,
+                description_text=item.get("description_text"),
             )
         )
     return records
@@ -158,6 +159,7 @@ def _process_records(
     records: Iterator[ListingRecord],
     *,
     download_images: bool,
+    fetch_description: bool = False,
 ) -> dict[str, int]:
     inserted = 0
     updated = 0
@@ -184,8 +186,13 @@ def _process_records(
             skipped_existing += 1
             continue
 
+        if fetch_description:
+            record = enrich_record_description(settings, record)
+
         if existing:
             existing.title = record.title
+            if record.description_text is not None:
+                existing.description_text = record.description_text
             existing.listing_url = record.listing_url
             existing.currency = record.currency
             existing.price_amount = record.price_amount
@@ -202,6 +209,7 @@ def _process_records(
                 source="ebay",
                 external_listing_id=record.external_listing_id,
                 title=record.title,
+                description_text=record.description_text,
                 listing_url=record.listing_url,
                 currency=record.currency,
                 price_amount=record.price_amount,
@@ -334,6 +342,7 @@ def run_phase1(
                 step,
                 record_iter,
                 download_images=download_images,
+                fetch_description=mock_input_file is None and settings.enable_ebay_api,
             )
             step.status = "succeeded"
             step.finished_at = _now()

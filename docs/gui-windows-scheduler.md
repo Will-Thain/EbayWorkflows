@@ -7,7 +7,7 @@ Use this when the PySide6 GUI is **closed** but you still want `scheduled_jobs` 
 ## Prerequisites
 
 1. PostgreSQL running locally (same `DATABASE_URL` as `.env`).
-2. Editable install: `pip install -e .` from the repo root.
+2. Dev install: `.\scripts\install-dev.ps1` from the repo root (includes sibling `mtg-card-recognition`).
 3. Schema includes `scheduled_jobs`: `ebay-workflows init-db`
 4. At least one **enabled** schedule with `next_run_at` in the past or future (create in **Workflows → Schedules**).
 

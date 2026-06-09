@@ -53,6 +53,7 @@ class Listing(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="ebay")
     external_listing_id: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    description_text: Mapped[str | None] = mapped_column(Text)
     listing_url: Mapped[str] = mapped_column(Text, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
     price_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)

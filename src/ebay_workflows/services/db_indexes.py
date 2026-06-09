@@ -6,6 +6,10 @@ from sqlalchemy.engine import Engine
 # Browse API returns at most ~10,000 results per query (offset ceiling).
 EBAY_BROWSE_MAX_OFFSET = 10_000
 
+SCHEMA_PATCH_DDL: tuple[str, ...] = (
+    "ALTER TABLE listings ADD COLUMN IF NOT EXISTS description_text TEXT",
+)
+
 PERFORMANCE_INDEX_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_listings_last_seen_at ON listings (last_seen_at)",
     "CREATE INDEX IF NOT EXISTS ix_listing_images_download_status ON listing_images (download_status)",
@@ -18,10 +22,22 @@ PERFORMANCE_INDEX_DDL: tuple[str, ...] = (
 )
 
 
+def ensure_schema_patches(engine: Engine) -> list[str]:
+    """Apply idempotent schema patches for databases created before Alembic migrations."""
+    applied: list[str] = []
+    with engine.begin() as conn:
+        for ddl in SCHEMA_PATCH_DDL:
+            conn.execute(text(ddl))
+            applied.append(ddl.split("ADD COLUMN IF NOT EXISTS ")[1].split(" ")[0])
+    return applied
+
+
 def ensure_performance_indexes(engine: Engine) -> list[str]:
     """Apply idempotent btree indexes used by ingest and ranking queries."""
     applied: list[str] = []
     with engine.begin() as conn:
+        for ddl in SCHEMA_PATCH_DDL:
+            conn.execute(text(ddl))
         for ddl in PERFORMANCE_INDEX_DDL:
             conn.execute(text(ddl))
             applied.append(ddl.split("IF NOT EXISTS ")[1].split(" ON ")[0])

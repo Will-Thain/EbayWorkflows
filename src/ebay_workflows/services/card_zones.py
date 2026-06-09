@@ -1,21 +1,8 @@
-"""Shim: zone layouts live in mtg_card_recognition."""
+"""eBay adapter: zone crop prep with Settings → RecognitionSettings."""
 
 from __future__ import annotations
 
 from mtg_card_recognition.zones import layouts as _layouts
-from mtg_card_recognition.zones.layouts import (  # noqa: F401
-    CardZoneCrops,
-    DFC_FRONT_ZONES,
-    OLD_FRAME_MTG_ZONES,
-    STANDARD_MTG_ZONES,
-    ZoneRect,
-    _crop_normalized,
-    detect_frame_layout,
-    extract_art_zone_from_card_image,
-    extract_zone_crops,
-    faiss_query_path,
-    zones_for_layout,
-)
 
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings

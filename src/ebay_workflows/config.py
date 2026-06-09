@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     phase1_commit_batch_size: int = Field(default=50, alias="PHASE1_COMMIT_BATCH_SIZE")
     phase1_image_download_chunk_size: int = Field(default=100, alias="PHASE1_IMAGE_DOWNLOAD_CHUNK_SIZE")
     phase1_refresh_after_hours: int | None = Field(default=None, alias="PHASE1_REFRESH_AFTER_HOURS")
+    phase1_fetch_item_description: bool = Field(default=True, alias="PHASE1_FETCH_ITEM_DESCRIPTION")
+    match_event_log_enabled: bool = Field(default=True, alias="MATCH_EVENT_LOG_ENABLED")
+    match_event_log_path: str = Field(
+        default="./data/exports/card-match-events.jsonl",
+        alias="MATCH_EVENT_LOG_PATH",
+    )
     phase5_skip_analyzed_images: bool = Field(default=False, alias="PHASE5_SKIP_ANALYZED_IMAGES")
     phase6_skip_analyzed_images: bool = Field(default=False, alias="PHASE6_SKIP_ANALYZED_IMAGES")
     pipeline_lock_path: str = Field(default="./.cache/pipeline.lock", alias="PIPELINE_LOCK_PATH")
@@ -80,7 +86,11 @@ class Settings(BaseSettings):
     phase6_max_lot_ev_multiple: float = Field(default=50.0, alias="PHASE6_MAX_LOT_EV_MULTIPLE")
     phase6_use_faiss_crop_match: bool = Field(default=True, alias="PHASE6_USE_FAISS_CROP_MATCH")
     phase6_min_crop_match_confidence: float = Field(
-        default=0.42, alias="PHASE6_MIN_CROP_MATCH_CONFIDENCE"
+        default=0.42,
+        validation_alias=AliasChoices(
+            "LOT_CROP_MIN_COMBINED_CONFIDENCE",
+            "PHASE6_MIN_CROP_MATCH_CONFIDENCE",
+        ),
     )
     cardmarket_condition_multiplier_nm: float = Field(default=1.0, alias="CARDMARKET_CONDITION_MULTIPLIER_NM")
     cardmarket_condition_multiplier_lp: float = Field(default=0.85, alias="CARDMARKET_CONDITION_MULTIPLIER_LP")
@@ -179,7 +189,7 @@ class Settings(BaseSettings):
             raise ValueError("PHASE6_MIN_CROP_MATCH_CONFIDENCE must be > 0 and <= 1")
 
         try:
-            from .services.openclip_runtime import normalize_torch_device
+            from mtg_card_recognition.embeddings.openclip import normalize_torch_device
 
             normalize_torch_device(self.torch_device)
         except ValueError as exc:

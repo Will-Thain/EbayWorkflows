@@ -56,7 +56,8 @@ Assert that `image_verification_source` is only `set_collector` or `set_symbol` 
 
 ## Matching and CV Tests
 
-- OCR extraction correctness on fixture crops (`test_card_zones*.py`)
+- Recognition unit tests run in **mtg-card-recognition** (`pytest` in sibling clone)
+- eBay integration: Phase 5/6 workflow tests, FAISS Postgres adapter (`test_faiss_batch.py`, `test_faiss_propose.py`)
 - OpenCLIP + FAISS retrieval sanity (`test_embedding_index.py`, `test_faiss_batch.py`)
 - hybrid scorer vs OCR-only and embedding-only baselines (`test_hybrid_scoring.py`)
 - Scryfall layout → zone selection (`test_layout_scryfall.py`)

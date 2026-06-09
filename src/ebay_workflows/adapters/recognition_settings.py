@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mtg_card_recognition.config import RecognitionSettings
+from mtg_card_recognition.config import RecognitionSettings, lot_crop_min_combined_confidence_from
 
 from ..config import Settings
 
@@ -26,6 +26,8 @@ def recognition_settings_from_app(settings: Settings) -> RecognitionSettings:
         faiss_index_path=settings.faiss_index_path,
         faiss_top_k=settings.faiss_top_k,
         faiss_index_use_art_zone=settings.faiss_index_use_art_zone,
+        faiss_build_max_cards=settings.faiss_build_max_cards,
+        faiss_build_all_cards=settings.faiss_build_all_cards,
         openclip_model_name=settings.openclip_model_name,
         torch_device=settings.torch_device,
         embedding_batch_size=settings.embedding_batch_size,
@@ -36,7 +38,7 @@ def recognition_settings_from_app(settings: Settings) -> RecognitionSettings:
         faiss_propose_candidates=settings.faiss_propose_candidates,
         title_match_prefilter_size=settings.title_match_prefilter_size,
         title_match_score_cutoff=settings.title_match_score_cutoff,
-        lot_crop_min_combined_confidence=settings.phase6_min_crop_match_confidence,
+        lot_crop_min_combined_confidence=lot_crop_min_combined_confidence_from(settings),
     )
 
 
@@ -68,6 +70,8 @@ def coerce_recognition_settings(settings: Settings | RecognitionSettings) -> Rec
         faiss_index_path=getattr(settings, "faiss_index_path", ""),
         faiss_top_k=getattr(settings, "faiss_top_k", 5),
         faiss_index_use_art_zone=getattr(settings, "faiss_index_use_art_zone", True),
+        faiss_build_max_cards=getattr(settings, "faiss_build_max_cards", 10000),
+        faiss_build_all_cards=getattr(settings, "faiss_build_all_cards", False),
         openclip_model_name=getattr(settings, "openclip_model_name", "ViT-B-32"),
         torch_device=getattr(settings, "torch_device", "cpu"),
         embedding_batch_size=getattr(settings, "embedding_batch_size", 32),
@@ -78,7 +82,5 @@ def coerce_recognition_settings(settings: Settings | RecognitionSettings) -> Rec
         faiss_propose_candidates=getattr(settings, "faiss_propose_candidates", True),
         title_match_prefilter_size=getattr(settings, "title_match_prefilter_size", 512),
         title_match_score_cutoff=getattr(settings, "title_match_score_cutoff", 65.0),
-        lot_crop_min_combined_confidence=getattr(
-            settings, "phase6_min_crop_match_confidence", 0.42
-        ),
+        lot_crop_min_combined_confidence=lot_crop_min_combined_confidence_from(settings),
     )

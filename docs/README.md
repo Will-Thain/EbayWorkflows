@@ -21,13 +21,15 @@ All docs in this folder use **[Shipped]**, **[Historical]**, and **[Future]** ta
 ## Document Map
 
 - `documentation-status.md` - shipped vs historical vs future labels; canonical doc index
+- `post-workflow-checklist.md` - after pipeline run: validation, config restructure, documentation updates
+- `open-items-status.md` - P1–P4 backlog and pipeline snapshots
 - `product-requirements.md` - scope, users, objectives, constraints
 - `workflow-phases.md` - phase-by-phase behavior and acceptance criteria
 - `architecture.md` - component design for CLI, services, and workers
 - `data-model.md` - PostgreSQL schema design and indexing strategy
 - `integration-specs.md` - eBay, Scryfall, and Cardmarket integration details
 - `library-stack.md` - recommended CV/OCR/embedding/vector-search libraries
-- `card-recognition-architecture.md` - matching architecture, `mtg_card_recognition` package, strict verification gate (shipped), historical audit
+- `card-recognition-architecture.md` - pointer to **mtg-card-recognition** `docs/architecture.md`
 - `ranking-and-confidence.md` - EV, risk, and confidence model definitions
 - `development-roadmap.md` - milestones, testing strategy, and delivery order
 - `implementation-spec.md` - concrete MVP build order and module plan
@@ -43,6 +45,7 @@ All docs in this folder use **[Shipped]**, **[Historical]**, and **[Future]** ta
 - `gui-windows-scheduler.md` - Windows Task Scheduler for headless `run-due-schedules`
 - `data-dictionary.md` - field-level semantics and provenance definitions
 - `docs/adr/0001-tech-stack.md` - initial architecture decision record
+- Panel v2 ADRs: [`../mtg-card-recognition/docs/adr/`](../mtg-card-recognition/docs/adr/) (`0003-proposal-cascade-flow`, `0003-eval-brief`, `0003-expert-review-v3`)
 
 ## Working Principles
 

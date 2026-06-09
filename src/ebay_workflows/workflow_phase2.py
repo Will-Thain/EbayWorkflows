@@ -13,15 +13,16 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .models import Listing, ListingCardCandidate, ScryfallCard, WorkflowRun, WorkflowStep
 from .services.ev_guardrails import title_match_allowed_for_pricing
+from .services.match_event_log import log_positive_match, match_log_path
 from .services.listing_filters import is_bulk_lot_title
 from .services.progress_report import emit_progress
-from .services.title_match import (
+from mtg_card_recognition.identifiers import build_set_collector_index
+from mtg_card_recognition.title.match import (
     CardMatchEntry,
     ScryfallTitleIndex,
     TitleMatchResult,
     match_listings_parallel,
 )
-from .services.card_identifiers import build_set_collector_index
 from .services.workflow_progress import publish_step_progress
 from .workflow_errors import fail_workflow_step
 
@@ -137,6 +138,20 @@ def _persist_matches(
                 rank_position=rank,
                 evidence_json=evidence,
             )
+        )
+        log_positive_match(
+            event="title_match",
+            phase=2,
+            listing_id=str(listing.id),
+            external_listing_id=listing.external_listing_id,
+            scryfall_id=match.card_id,
+            card_name=match.card_name,
+            match_score=float(match.score),
+            source_method="title_match",
+            match_method=match.match_method,
+            pricing_eligible=pricing_ok,
+            pricing_reject_reason=reject_reason,
+            log_path=match_log_path(settings),
         )
         rank += 1
         rows_created += 1

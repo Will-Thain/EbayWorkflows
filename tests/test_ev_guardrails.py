@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 from ebay_workflows.services.ev_guardrails import (
     cap_ev_adjusted,
+    crop_match_allowed_for_pricing,
+    pricing_allowed_for_candidate,
     sanitize_unit_price,
     title_match_allowed_for_pricing,
 )
@@ -17,7 +19,57 @@ def _settings() -> SimpleNamespace:
         title_match_min_score_non_mtg=0.98,
         cardmarket_max_unit_price_eur=250.0,
         ev_max_listing_cost_multiple=10.0,
+        image_evidence_min_ocr_similarity=0.65,
+        image_evidence_min_faiss_score=0.65,
+        card_set_symbol_min_score=0.45,
     )
+
+
+def test_bulk_lot_title_rejected_for_pricing() -> None:
+    allowed, reason = title_match_allowed_for_pricing(
+        "500 Time Spiral Basic Land Bulk Lot MTG Magic Cards",
+        "Time Spiral",
+        0.95,
+        _settings(),
+    )
+    assert allowed is False
+    assert reason == "bulk_lot_title_requires_image_evidence"
+
+
+def test_crop_match_evidence_allows_bulk_lot_pricing() -> None:
+    card = SimpleNamespace(id="abc-123", name="Lightning Bolt", set_code="LEA", collector_number="1")
+    match_evidence = {
+        "match_method": "set_collector",
+        "parsed_identifiers": {"set_code": "LEA", "collector_number": "1"},
+    }
+    allowed, reason = crop_match_allowed_for_pricing(
+        "500 card bulk lot MTG magic",
+        card.name,
+        0.72,
+        match_evidence,
+        scryfall_id=str(card.id),
+        scryfall_card=card,
+        settings=_settings(),
+    )
+    assert allowed is True
+    assert reason is None
+
+
+def test_image_verified_candidate_bypasses_title_pricing_gate() -> None:
+    evidence = {
+        "image_verified": True,
+        "image_verification_source": "set_collector",
+        "match_score": 0.5,
+    }
+    allowed, reason = pricing_allowed_for_candidate(
+        "Some listing",
+        "Lightning Bolt",
+        0.5,
+        evidence,
+        _settings(),
+    )
+    assert allowed is True
+    assert reason is None
 
 
 def test_rejects_avengers_armageddon_loose_match() -> None:

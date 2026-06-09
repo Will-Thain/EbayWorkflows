@@ -3,25 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from ebay_workflows.services.image_evidence import candidate_has_image_evidence
-from ebay_workflows.workflow_phase5 import _apply_region_evidence_to_candidates, _update_candidate_confidence
-
-
-def test_update_candidate_confidence_only_for_matching_card() -> None:
-    bolt = SimpleNamespace(
-        scryfall_card=SimpleNamespace(name="Lightning Bolt"),
-        confidence_score=0.7,
-        evidence_json={},
-    )
-    counterspell = SimpleNamespace(
-        scryfall_card=SimpleNamespace(name="Counterspell"),
-        confidence_score=0.7,
-        evidence_json={},
-    )
-
-    assert _update_candidate_confidence(bolt, "Lightning Bolt") is True
-    assert _update_candidate_confidence(counterspell, "Lightning Bolt") is False
-    assert bolt.evidence_json["ocr_verification"]["similarity"] >= 0.8
-    assert counterspell.evidence_json == {}
+from ebay_workflows.workflow_phase5 import _apply_region_evidence_to_candidates
 
 
 def test_reprint_ocr_does_not_bleed_across_candidates() -> None:

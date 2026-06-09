@@ -68,7 +68,7 @@ Core components:
 
 Propose-then-confirm design (full detail: `card-recognition-architecture.md`). Status tags: `documentation-status.md`.
 
-- `src/mtg_card_recognition/` — extractable recognition library **[Shipped]**
+- **`mtg-card-recognition`** — sibling repo [`../mtg-card-recognition`](https://github.com/Will-Thain/mtg-card-recognition); editable install via `scripts/install-dev.ps1` **[Shipped]**
 - `OpenCV` — region detection, alignment, zone crops **[Shipped]**
 - `OpenCLIP` + `FAISS` — art-zone embeddings; proposal + corroboration **[Shipped]**; Milo alt embedder **[Future]**
 - `Tesseract` — zone OCR **[Shipped]**; `PaddleOCR` primary **[Future]**

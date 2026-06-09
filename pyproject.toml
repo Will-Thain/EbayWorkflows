@@ -10,21 +10,17 @@ readme = "docs/README.md"
 requires-python = ">=3.11"
 dependencies = [
   "alembic",
-  "faiss-cpu",
   "httpx",
-  "open-clip-torch",
-  "opencv-python",
+  "mtg-card-recognition @ git+https://github.com/Will-Thain/mtg-card-recognition.git@dcaafef",
   "paddleocr",
   "psycopg[binary]",
   "pydantic>=2",
   "pydantic-settings",
-  "pytesseract",
   "rapidfuzz",
   "rich",
   "sqlalchemy",
   "structlog",
   "tenacity",
-  "torch",
   "typer",
 ]
 
@@ -48,4 +44,4 @@ ebay-workflows-run-due-schedules = "ebay_workflows.scheduler:run_due_schedules_m
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["ebay_workflows*", "mtg_card_recognition*"]
+include = ["ebay_workflows*"]

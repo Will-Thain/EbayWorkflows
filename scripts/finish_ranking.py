@@ -11,10 +11,10 @@ os.environ["TORCH_DEVICE"] = "cpu"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ebay_workflows.cli_context import cli_session, load_settings
-from ebay_workflows.hardening import run_data_integrity_checks
-from ebay_workflows.services.ranked_export import fetch_ranked_listings, write_ranked_json
-from ebay_workflows.workflow_phase4 import run_phase4_ranking
+from ebay_workflows.cli_context import cli_session, load_settings  # noqa: E402
+from ebay_workflows.hardening import run_data_integrity_checks  # noqa: E402
+from ebay_workflows.services.ranked_export import fetch_ranked_listings, write_ranked_json  # noqa: E402
+from ebay_workflows.workflow_phase4 import run_phase4_ranking  # noqa: E402
 
 
 def main() -> int:

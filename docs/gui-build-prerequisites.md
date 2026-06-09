@@ -39,7 +39,7 @@ Checklist and **locked defaults** before implementing the desktop app. See `gui-
 
 ### Child process spawn
 
-- Executable: `ebay-workflows` on `PATH` (editable install: `pip install -e .`).
+- Executable: `ebay-workflows` on `PATH` (dev install: `.\scripts\install-dev.ps1` from repo root).
 - Working directory: repository root (directory containing `.env`).
 - Environment: inherit OS env; load `.env` via existing `Settings` in child (same as CLI).
 - Recommend running `scripts/clear-ebay-env-overrides.ps1` before starting GUI if eBay creds misbehave.

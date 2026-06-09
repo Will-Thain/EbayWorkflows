@@ -95,7 +95,7 @@ Attach market pricing suitable for EV calculations.
 
 Architecture (zones, strict verification gate, artifacts, package layout): **`card-recognition-architecture.md`**.
 
-Recognition logic lives in **`src/mtg_card_recognition/`** (extractable library). eBay wiring uses thin shims under `src/ebay_workflows/services/` and `adapters/recognition_settings.py`.
+Recognition logic lives in the **`mtg-card-recognition`** sibling repo (import `mtg_card_recognition`). eBay wiring uses thin shims under `src/ebay_workflows/services/` and `adapters/recognition_settings.py`. Local dev: `scripts/install-dev.ps1`.
 
 ### Verification policy **[Shipped]**
 

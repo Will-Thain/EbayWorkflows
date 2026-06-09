@@ -1,23 +1,13 @@
 # Labeled crop fixtures
 
-Golden crop images for regression-testing card recognition (Phase 5/6 strict gate).
+**Canonical location:** [`../mtg-card-recognition/tests/fixtures/labeled_crops/`](../mtg-card-recognition/tests/fixtures/labeled_crops/)
 
-## Layout
+Golden crop images for regression-testing the strict verification gate and panel v2 eval live in the recognition package repo only.
 
-- `manifest.example.json` — sample entries (no binary images required for CI)
-- `manifest.schema.json` — JSON Schema for manifest rows
-- `examples/` — optional PNG/JPG crops referenced by manifest `path`
+Curate from production:
 
-## Manifest row fields
+```powershell
+.\.venv\Scripts\python.exe scripts\curate_labeled_crops.py
+```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | yes | Stable fixture id |
-| `path` | yes | Relative path under this directory |
-| `expected_set` | no | Expected Scryfall set code |
-| `expected_collector` | no | Expected collector number |
-| `expected_name` | no | Expected card name substring |
-| `verify_expect` | yes | `pass` or `fail` — whether strict gate should verify |
-| `notes` | no | Operator context |
-
-Add real crop PNGs under `examples/` as you curate failures from production runs.
+Output is written to the sibling `mtg-card-recognition` clone. See `docs/adr/0003-eval-brief.md` in that repo (or the stub pointer in `docs/card-recognition-architecture.md`).

@@ -13,11 +13,12 @@
 
 1. install Tesseract OCR (Windows): `winget install -e --id UB-Mannheim.TesseractOCR`
    - restart the terminal so `tesseract` is on PATH, or set `TESSERACT_CMD` in `.env`
-1b. create and activate virtual environment
-2. install dependencies (`pip install -e .` or `pip install -r requirements.txt`)
-3. set required environment variables from `.env.example`
-4. run DB migrations
-5. run `ebay-workflows validate-env`
+1b. create and activate virtual environment (`python -m venv .venv`)
+2. clone sibling recognition repo (once): `git clone https://github.com/Will-Thain/mtg-card-recognition.git ../mtg-card-recognition`
+3. install dependencies: `.\scripts\install-dev.ps1` (editable `mtg-card-recognition` + `ebay-workflows[dev]`)
+4. set required environment variables from `.env.example`
+5. run DB migrations
+6. run `ebay-workflows validate-env`
    - includes **Match Statistics** (verified listings, pricing-eligible count) when DB is up
    - if warnings mention shell overrides, run `./scripts/clear-ebay-env-overrides.ps1` (stale `EBAY_*` env vars beat `.env`)
 6. verify eBay OAuth (production keys by default):
@@ -87,9 +88,8 @@
    `python scripts/finish_ranking_debug.py`
    - writes step trace to `data/exports/finish-debug.log`
    - use when `finish-ranking.ps1` or phase4 appears stuck on model/settings import
-17g. **after reanalyze completes** — validation and snapshot update:
-   `./scripts/post-reanalyze-validation.ps1`
-   - then update pipeline metrics in `docs/open-items-status.md` (see “After reanalyze completes” checklist)
+17g. **after reanalyze / phase5 re-run completes** — validation, config cleanup, docs:
+   see `docs/post-workflow-checklist.md`
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:

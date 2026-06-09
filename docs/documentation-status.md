@@ -16,7 +16,7 @@ When a line mixes shipped and planned parts, tag each clause: e.g. “FAISS corr
 
 | Document | Status | Notes |
 |----------|--------|-------|
-| `card-recognition-architecture.md` | **[Shipped]** + **[Historical]** | Canonical verification spec; OR-gate audit sections labeled |
+| `card-recognition-architecture.md` | **[Shipped]** stub | Pointer to mtg-card-recognition `docs/architecture.md` |
 | `workflow-phases.md` | **[Shipped]** | Phase order 2→5→3→6→4; Phase 5 gate |
 | `config-contract.md` | **[Shipped]** | Env vars including `VERIFY_*`, `FAISS_PROPOSE_CANDIDATES` |
 | `data-dictionary.md` | **[Shipped]** | `evidence_json` verification + provenance fields |
@@ -40,8 +40,9 @@ When a line mixes shipped and planned parts, tag each clause: e.g. “FAISS corr
 | `gui-windows-scheduler.md` | **[Shipped]** | Headless `run-due-schedules` |
 | `adr/0001-tech-stack.md` | **[Shipped]** | Stack + `mtg_card_recognition` |
 | `README.md` (this folder) | **[Shipped]** | Doc map + tag legend pointer |
-| `packages/mtg-card-recognition/README.md` | Mixed | Shipped API; future standalone repo |
+| [`mtg-card-recognition`](../mtg-card-recognition) README | Shipped | Standalone sibling repo |
 | `open-items-status.md` | **[Shipped]** | P1–P4 tracker, reanalyze checklist, deferred backlog |
+| `post-workflow-checklist.md` | **[Shipped]** | After pipeline run: validation, config restructure, doc updates |
 
 ## Intentionally not “final” (by design)
 
@@ -61,10 +62,10 @@ Last full doc sync: 2026-06-08 (branch `main`).
 
 | Concern | Location |
 |---------|----------|
-| Recognition library | `src/mtg_card_recognition/` |
-| eBay adapter | `src/ebay_workflows/adapters/recognition_settings.py` |
-| Service shims | `src/ebay_workflows/services/{image_evidence,card_zones,…}.py` |
+| Recognition library | Sibling repo `../mtg-card-recognition` — docs in `docs/architecture.md` |
+| eBay adapters | `adapters/recognition_settings.py`, `services/{embedding_index,set_symbol_match,image_evidence,card_zones}.py` |
 | Strict gate | `mtg_card_recognition.evidence` |
 | GUI provenance | `gui/listing_detail.py`, `gui/match_widgets.py` |
 | Export provenance | `services/ranked_export.py` |
 | Open items tracker | `docs/open-items-status.md` |
+| Post-workflow checklist | `docs/post-workflow-checklist.md` |

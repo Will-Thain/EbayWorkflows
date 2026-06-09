@@ -86,34 +86,14 @@ Track incomplete workflow elements ranked by priority.
 
 ## After Phase 5 re-run — operator checklist
 
-Run after fixing Phase 5 `faiss_proposal` dedup and re-running OCR:
+See **`post-workflow-checklist.md`** for the full post-run sequence (validation, GUI, config restructure, docs).
 
-1. **Phase 5 only**
-   ```powershell
-   $env:TORCH_DEVICE = "cpu"
-   .venv\Scripts\python.exe -m ebay_workflows.cli phase5-verify-ocr --use-real-ocr --use-embedding-match
-   .venv\Scripts\python.exe -m ebay_workflows.cli phase3-join-prices
-   .venv\Scripts\python.exe -m ebay_workflows.cli phase4-rank --hybrid
-   ```
+Quick validation:
 
-2. **Validation export**
-   ```powershell
-   .\scripts\post-reanalyze-validation.ps1
-   ```
-3. **If verified still 0** — triage Tesseract, FAISS coverage, `VERIFY_*` thresholds, `evidence_json.pricing_reject_reason`.
-
-4. **Optional Phase 6** (after Phase 5 stable):
-   ```powershell
-   $env:TORCH_DEVICE = "cpu"
-   .venv\Scripts\python.exe -m ebay_workflows.cli phase6-detect-lots --use-real-detection
-   .venv\Scripts\python.exe -m ebay_workflows.cli phase4-rank --hybrid
-   ```
-
-5. **Refresh Cardmarket bulk** if stale (validate-env warns):
-   ```powershell
-   .venv\Scripts\python.exe -m ebay_workflows.cli download-cardmarket-bulk -o ./data/cardmarket/prices.csv
-   .venv\Scripts\python.exe -m ebay_workflows.cli sync-cardmarket
-   ```
+```powershell
+.\scripts\post-reanalyze-validation.ps1
+.venv\Scripts\python.exe -m ebay_workflows.cli match-stats
+```
 
 ---
 

@@ -6,12 +6,13 @@ from typing import Any
 
 from mtg_card_recognition.pipeline.lot_match import resolve_lot_crop_match as _resolve_lot_crop_match
 
+from mtg_card_recognition.identifiers import ParsedCardIdentifiers
+from mtg_card_recognition.title.match import ScryfallTitleIndex, TitleMatchResult
+
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
 from ..models import ScryfallCard
-from .card_identifiers import ParsedCardIdentifiers
 from .embedding_index import index_exists, search_similar_cards
-from .title_match import ScryfallTitleIndex, TitleMatchResult
 
 
 def resolve_lot_crop_match(

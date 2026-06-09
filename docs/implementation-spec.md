@@ -1,6 +1,6 @@
 # Implementation Specification
 
-**Status:** Phases 1–6 and GUI **[Shipped]** on branch `feature/card-recognition-package`. Tags: `documentation-status.md`.
+**Status:** Phases 1–6 and GUI **[Shipped]** on `main`. Tags: `documentation-status.md`.
 
 ## Objective
 
@@ -17,17 +17,12 @@ Concrete module layout and build order for the local CLI + PostgreSQL workflow e
 - Phase 5: zone OCR, embeddings, strict verification gate, provenance attach
 - Phase 6: bulk-lot multi-card detection and lot scoring
 - Desktop GUI (PySide6): Opportunities, Workflows, Database, Home, Schedules
-- Extractable recognition library: `mtg_card_recognition`
+- Extractable recognition library: **`mtg-card-recognition`** sibling repo (import `mtg_card_recognition`)
 
 ## Module Layout (actual)
 
 ```text
 src/
-  mtg_card_recognition/          # Card recognition library (zones, OCR, embeddings, evidence gate)
-    config.py                    # RecognitionSettings
-    evidence/                    # gate, selection, attach
-    zones/                       # align, layouts, symbol, mana, regions
-    ocr/, embeddings/, catalog/, title/, pipeline/
   ebay_workflows/
     cli.py                       # Command handlers
     config.py                    # Settings (env parsing)
@@ -39,11 +34,12 @@ src/
     gui/                         # PySide6 desktop app
     scheduler.py                 # Headless due-job dispatch
     models.py, db.py
-packages/mtg-card-recognition/ # Standalone package metadata (future repo split)
-tests/                         # Unit + integration tests (112+ passing)
+../mtg-card-recognition/         # Sibling repo: mtg_card_recognition package (git clone)
+tests/                           # Unit + integration tests (112+ passing)
+scripts/install-dev.ps1          # pip install -e sibling + ebay-workflows[dev]
 ```
 
-Legacy doc references to `src/cli/`, `src/matching/`, etc. are **[Historical]** — all logic lives under `ebay_workflows` and `mtg_card_recognition`.
+Legacy doc references to `src/cli/`, `src/matching/`, or in-tree `src/mtg_card_recognition/` are **[Historical]** — recognition code lives in the sibling repo; eBay logic under `ebay_workflows`.
 
 ## Build Order (as implemented)
 
