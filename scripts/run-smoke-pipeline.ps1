@@ -85,7 +85,7 @@ Write-Host "`n=== Phases 2 -> 5 -> 3 -> 6 -> 4 (sample scope) ==="
 Invoke-Cli phase2-match-title --top-k 3 @sampleArgs
 Invoke-Cli phase5-verify-ocr --use-real-ocr --use-embedding-match @sampleArgs
 Invoke-Cli phase3-join-prices
-Invoke-Cli phase6-detect-lots --use-real-detection @sampleArgs
+Invoke-Cli phase6-detect-lots --use-real-lot-detection @sampleArgs
 Invoke-Cli phase4-rank --hybrid
 
 Write-Host "`n=== Post-run validation ==="

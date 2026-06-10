@@ -435,7 +435,7 @@ def review_listing(
 
 
 def print_verdict(verdict: ExpertPanelVerdict) -> None:
-    print(f"\n--- Expert panel (5 agents) ---")
+    print("\n--- Expert panel (5 agents) ---")
     print(f"Consensus: {verdict.consensus}")
     print(f"Expected: {verdict.expected_behavior}")
     print(f"Actual:   {verdict.actual_behavior}")

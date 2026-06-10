@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     workflow_singles_only: bool = Field(default=False, alias="WORKFLOW_SINGLES_ONLY")
     pipeline_lock_path: str = Field(default="./.cache/pipeline.lock", alias="PIPELINE_LOCK_PATH")
     pipeline_enforce_single_run: bool = Field(default=True, alias="PIPELINE_ENFORCE_SINGLE_RUN")
-    image_download_requests_per_minute: int = Field(default=120, alias="IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE")
     fx_gbp_to_eur: float | None = Field(default=1.17, alias="FX_GBP_TO_EUR")
     title_match_min_score_for_pricing: float = Field(default=0.90, alias="TITLE_MATCH_MIN_SCORE_FOR_PRICING")
     title_match_min_score_non_mtg: float = Field(default=0.98, alias="TITLE_MATCH_MIN_SCORE_NON_MTG")

@@ -65,7 +65,7 @@ WORKFLOW_JOBS: dict[str, WorkflowJobDef] = {
     "phase4": WorkflowJobDef("phase4", "Rank (hybrid)", "medium", _simple_phase("phase4-rank")),
     "phase5": WorkflowJobDef(
         "phase5",
-        "OCR + embeddings",
+        "Image cascade (OCR + embeddings)",
         "long",
         lambda _p: ["phase5-verify-ocr", "--use-real-ocr", "--use-embedding-match"],
     ),
@@ -73,7 +73,7 @@ WORKFLOW_JOBS: dict[str, WorkflowJobDef] = {
         "phase6",
         "Bulk lot detection",
         "long",
-        lambda _p: ["phase6-detect-lots", "--use-real-detection"],
+        lambda _p: ["phase6-detect-lots", "--use-real-lot-detection"],
     ),
     "pipeline": WorkflowJobDef(
         "pipeline",

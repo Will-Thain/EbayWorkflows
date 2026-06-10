@@ -17,6 +17,8 @@ Normative process and decision rules: [`mtg-card-recognition/docs/expert-panel/p
 | [ebay-restructure-v1](reviews/ebay-restructure-v1.md) | 2026-06-10 | Package layout post v0.3.2 | **5/5 APPROVE WITH AMENDMENTS** |
 | [documentation-audit-v1](reviews/documentation-audit-v1.md) | 2026-06-10 | Post–M7 documentation accuracy & improvement outlook | **5/5 APPROVE WITH AMENDMENTS** |
 | [legacy-code-audit-v1](reviews/legacy-code-audit-v1.md) | 2026-06-10 | Legacy code findings verification (M7 shims, compat paths) | **5/5 CONFIRM WITH AMENDMENTS** |
+| [codebase-improvement-v1](reviews/codebase-improvement-v1.md) | 2026-06-10 | Post-M7 improvement areas (trust tests, CI, phases, config) | **5/5 APPROVE WITH AMENDMENTS** |
+| [naming-semantics-v1](reviews/naming-semantics-v1.md) | 2026-06-10 | Semantics, vocabulary, CLI/catalog/ORM naming consistency | **5/5 APPROVE WITH AMENDMENTS** |
 
 ## When to consult
 
@@ -26,6 +28,7 @@ Normative process and decision rules: [`mtg-card-recognition/docs/expert-panel/p
 - Phase execution order changes
 - Major documentation refresh after milestone completion (see [documentation-audit-v1](reviews/documentation-audit-v1.md))
 - Post-milestone legacy code / shim audits (see [legacy-code-audit-v1](reviews/legacy-code-audit-v1.md))
+- Semantics and naming convention reviews (see [naming-semantics-v1](reviews/naming-semantics-v1.md))
 
 ## Related ADRs
 

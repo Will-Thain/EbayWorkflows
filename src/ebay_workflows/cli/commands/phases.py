@@ -128,10 +128,11 @@ def phase6_detect_lots(
         "--mock-lot-file",
         help="Path to JSON mock bulk-lot detections for deterministic execution",
     ),
-    use_real_detection: bool = typer.Option(
+    use_real_lot_detection: bool = typer.Option(
         False,
+        "--use-real-lot-detection/--no-use-real-lot-detection",
         "--use-real-detection/--no-use-real-detection",
-        help="Detect multiple cards per image with OpenCV + OCR on local listing images",
+        help="Detect multiple cards per image with OpenCV + OCR (--use-real-detection is a deprecated alias)",
     ),
     max_listings: int | None = typer.Option(
         None,
@@ -161,7 +162,7 @@ def phase6_detect_lots(
             session,
             settings,
             mock_lot_file=mock_lot_file,
-            use_real_detection=use_real_detection,
+            use_real_lot_detection=use_real_lot_detection,
         )
     console.print("[bold green]Phase 6 bulk-lot detection completed.[/bold green]")
     console.print(f"Run ID: [cyan]{run_id}[/cyan]")
@@ -172,12 +173,12 @@ def clear_match_data(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     keep_exports: bool = typer.Option(False, "--keep-exports", help="Do not delete ranked export JSON files"),
 ) -> None:
-    """Delete title/image match artifacts and scores; keep listings, images, Scryfall, and prices."""
+    """Delete listing_card_candidates, detections, OCR rows, and scores; keep listings, images, Scryfall, and prices."""
     settings = load_settings(action="clear match data")
     with cli_session(action="clear match data", settings=settings) as (_, session):
         before = count_matching_artifacts(session)
 
-    table = Table(title="Match data to delete")
+    table = Table(title="Candidate / match data to delete")
     table.add_column("Table / artifact", style="cyan")
     table.add_column("Rows / files", style="yellow")
     for key, value in before.items():
@@ -188,7 +189,7 @@ def clear_match_data(
         console.print("[green]No match data found in the database.[/green]")
         return
 
-    if not yes and not typer.confirm("Delete all match/score data listed above?", default=False):
+    if not yes and not typer.confirm("Delete all candidate/match/score data listed above?", default=False):
         console.print("[yellow]Aborted.[/yellow]")
         raise typer.Exit(code=1)
 

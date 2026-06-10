@@ -93,7 +93,7 @@
 17b. run bulk-lot multi-card detection (mock):
    `ebay-workflows phase6-detect-lots --mock-lot-file "samples/mock_lot_detections.json"`
     or real OpenCV multi-card detection + OCR on cached images:
-   `ebay-workflows phase6-detect-lots --use-real-detection`
+   `ebay-workflows phase6-detect-lots --use-real-lot-detection`
 18. run post-MVP integrity checks:
    `ebay-workflows data-integrity-check`
 18b. prune orphan listing image files from cache root (dry-run default):

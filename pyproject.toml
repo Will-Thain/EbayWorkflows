@@ -12,7 +12,6 @@ dependencies = [
   "alembic",
   "httpx",
   "mtg-card-recognition @ git+https://github.com/Will-Thain/mtg-card-recognition.git@3ae59b4",
-  "paddleocr",
   "psycopg[binary]",
   "pydantic>=2",
   "pydantic-settings",
@@ -26,6 +25,9 @@ dependencies = [
 
 [project.optional-dependencies]
 recognition = []
+ocr = [
+  "paddleocr",
+]
 gui = [
   "pyside6>=6.6",
 ]

@@ -38,7 +38,7 @@ if (-not (Test-Path "./.cache/images/set_symbol_templates/*.png")) {
 Invoke-Cli phase5-verify-ocr --use-real-ocr --use-embedding-match
 Invoke-Cli phase3-join-prices
 if (-not $SkipPhase6) {
-    Invoke-Cli phase6-detect-lots --use-real-detection
+    Invoke-Cli phase6-detect-lots --use-real-lot-detection
 }
 Invoke-Cli phase4-rank --hybrid
 New-Item -ItemType Directory -Force -Path ./data/exports | Out-Null

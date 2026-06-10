@@ -56,7 +56,7 @@ def investigate(session, max_listings: int, label: str) -> dict[str, Any]:
         return {"label": label, "error": "no listings in DB"}
 
     listings = session.execute(select(Listing).where(Listing.id.in_(ids))).scalars().all()
-    bulk = sum(1 for l in listings if is_bulk_lot_title(l.title))
+    bulk = sum(1 for listing in listings if is_bulk_lot_title(listing.title))
     singles = len(listings) - bulk
 
     images = session.execute(
@@ -179,7 +179,7 @@ def investigate(session, max_listings: int, label: str) -> dict[str, Any]:
         "listings_rank_value_gt_0": int(positive_rank),
         "candidates_with_bottom_parsed": int(bottom_parsed),
         "gate_status_counts": {row[0]: int(row[1]) for row in gate_status_rows},
-        "sample_titles": [l.title[:70] for l in sorted(listings, key=lambda x: str(x.id))[:5]],
+        "sample_titles": [listing.title[:70] for listing in sorted(listings, key=lambda x: str(x.id))[:5]],
     }
 
 

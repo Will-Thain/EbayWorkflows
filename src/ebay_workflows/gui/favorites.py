@@ -1,3 +1,5 @@
+"""Listing favourites — US module/column names; GUI copy uses UK “Favourite(s)”."""
+
 from __future__ import annotations
 
 import uuid

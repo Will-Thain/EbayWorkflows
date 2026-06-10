@@ -24,7 +24,7 @@ if (-not (Test-Path "./.cache/images/set_symbol_templates/*.png")) {
 Write-Host "Re-running image matching on full cached image set..."
 & $cli phase5-verify-ocr --use-real-ocr --use-embedding-match
 & $cli phase3-join-prices
-& $cli phase6-detect-lots --use-real-detection
+& $cli phase6-detect-lots --use-real-lot-detection
 & $cli phase4-rank --hybrid
 
 New-Item -ItemType Directory -Force -Path ./data/exports | Out-Null

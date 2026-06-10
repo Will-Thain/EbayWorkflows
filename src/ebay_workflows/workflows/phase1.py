@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -15,13 +15,11 @@ from ..models import Listing, ListingImage, WorkflowRun, WorkflowStep
 from ..persistence.repositories import ListingRepository
 from ..operations.image_cache import download_many_to_cache
 from ..operations.pipeline_lock import pipeline_run_lock
+from ..operations.metrics import merge_phase_counters
 from ..operations.progress_report import emit_progress
 from ..operations.workflow_progress import publish_step_progress
+from ..operations.workflow_run import utc_now
 from ..workflow_errors import fail_workflow_step
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _load_mock_listings(path: str) -> list[ListingRecord]:
@@ -107,7 +105,7 @@ def _download_image_batch(
         img.local_path = local_path
         img.content_hash = content_hash
         img.download_status = "succeeded"
-        img.downloaded_at = _now()
+        img.downloaded_at = utc_now()
         downloaded += 1
     return downloaded
 
@@ -172,7 +170,7 @@ def _process_records(
     commit_batch = max(1, settings.phase1_commit_batch_size)
     records_seen = 0
     pending_downloads: list[tuple[ListingImage, str]] = []
-    now = _now()
+    now = utc_now()
 
     listing_repo = ListingRepository(session)
 
@@ -190,60 +188,21 @@ def _process_records(
         if fetch_description:
             record = enrich_record_description(settings, record)
 
-        if existing:
-            existing.title = record.title
-            if record.description_text is not None:
-                existing.description_text = record.description_text
-            existing.listing_url = record.listing_url
-            existing.currency = record.currency
-            existing.price_amount = record.price_amount
-            existing.shipping_amount = record.shipping_amount
-            existing.condition_text = record.condition_text
-            existing.raw_payload_json = record.raw_payload
-            existing.last_seen_at = now
-            listing = existing
+        outcome = listing_repo.upsert_from_record(record, now=now)
+        listing = outcome.listing
+        if outcome.created:
+            inserted += 1
+        else:
             updated += 1
             if settings.phase1_skip_existing_listings:
                 refreshed_stale += 1
-        else:
-            listing = Listing(
-                source="ebay",
-                external_listing_id=record.external_listing_id,
-                title=record.title,
-                description_text=record.description_text,
-                listing_url=record.listing_url,
-                currency=record.currency,
-                price_amount=record.price_amount,
-                shipping_amount=record.shipping_amount,
-                condition_text=record.condition_text,
-                raw_payload_json=record.raw_payload,
-                first_seen_at=now,
-                last_seen_at=now,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(listing)
-            session.flush()
-            inserted += 1
 
         writes_since_commit += 1
 
         for image_url in record.image_urls:
-            existing_img = session.execute(
-                select(ListingImage).where(
-                    ListingImage.listing_id == listing.id,
-                    ListingImage.source_url == image_url,
-                )
-            ).scalar_one_or_none()
-            if existing_img:
+            img = listing_repo.ensure_pending_image(listing.id, image_url)
+            if img is None:
                 continue
-
-            img = ListingImage(
-                listing_id=listing.id,
-                source_url=image_url,
-                download_status="pending",
-            )
-            session.add(img)
             session.flush()
             image_rows += 1
             if download_images:
@@ -313,7 +272,7 @@ def run_phase1(
                 "max_pages": max_pages,
                 "mock_input_file": mock_input_file,
             },
-            started_at=_now(),
+            started_at=utc_now(),
         )
         session.add(run)
         session.flush()
@@ -323,7 +282,7 @@ def run_phase1(
             step_name="phase1_ingest",
             phase_number=1,
             status="running",
-            started_at=_now(),
+            started_at=utc_now(),
             attempt=1,
         )
         session.add(step)
@@ -346,14 +305,14 @@ def run_phase1(
                 fetch_description=mock_input_file is None and settings.enable_ebay_api,
             )
             step.status = "succeeded"
-            step.finished_at = _now()
-            step.metrics_json = {
-                **metrics,
-                "pipeline_max_download_workers": settings.pipeline_max_download_workers,
-                "phase1_commit_batch_size": settings.phase1_commit_batch_size,
-            }
+            step.finished_at = utc_now()
+            step.metrics_json = merge_phase_counters(
+                metrics,
+                pipeline_max_download_workers=settings.pipeline_max_download_workers,
+                phase1_commit_batch_size=settings.phase1_commit_batch_size,
+            )
             run.status = "succeeded"
-            run.finished_at = _now()
+            run.finished_at = utc_now()
             session.commit()
         except Exception as exc:  # noqa: BLE001
             fail_workflow_step(session, step, run, exc)

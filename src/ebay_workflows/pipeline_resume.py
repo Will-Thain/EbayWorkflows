@@ -161,7 +161,7 @@ def run_resumable_pipeline(
                 session,
                 settings,
                 mock_lot_file=cfg.mock_lot_file,
-                use_real_detection=cfg.use_real_lot_detection,
+                use_real_lot_detection=cfg.use_real_lot_detection,
             )
 
         summary["executed"][f"phase_{phase}"] = run_id

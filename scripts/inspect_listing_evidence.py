@@ -32,7 +32,6 @@ def main() -> None:
         ).scalars().all()
         for cand in cands:
             ev = cand.evidence_json or {}
-            ocr = ev.get("ocr_verification") or {}
             print(
                 f"  rank={cand.rank_position} method={cand.source_method} score={cand.match_score} "
                 f"verified={ev.get('image_verified')} pricing={ev.get('pricing_eligible')}"

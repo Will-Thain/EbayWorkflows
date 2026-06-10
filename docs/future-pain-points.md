@@ -255,10 +255,10 @@ PHASE1_REFRESH_AFTER_HOURS=24
 **Best fix:** Shared token-bucket limiter across image CDN and FAISS art downloads.
 
 **Implemented:**
-- `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` (default 120) via `GlobalRateLimiter` in `image_cache.py`.
-- eBay API keeps its own `EBAY_REQUESTS_PER_MINUTE` limiter.
+- Image CDN downloads use `GLOBAL_REQUESTS_PER_MINUTE_CAP` via `wait_global_http` in `operations/image_cache.py`.
+- eBay API keeps its own `EBAY_REQUESTS_PER_MINUTE` limiter when set.
 
-**Future:** Unify under `GLOBAL_REQUESTS_PER_MINUTE_CAP` accounting.
+**Removed:** `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` (unused duplicate of global cap).
 
 ---
 
@@ -370,7 +370,6 @@ PHASE1_REFRESH_AFTER_HOURS=24
 | `PHASE6_SKIP_ANALYZED_IMAGES` | `false` | Set `true` to skip images with existing lot detections |
 | `FX_GBP_TO_EUR` | `1.17` | Convert eBay GBP costs to EUR base currency |
 | `PHASE1_REFRESH_AFTER_HOURS` | disabled | Refresh stale listings without full re-ingest |
-| `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` | `120` | CDN download rate limit |
 | `PIPELINE_ENFORCE_SINGLE_RUN` | `true` | Exclusive pipeline lock |
 | `PIPELINE_LOCK_PATH` | `./.cache/pipeline.lock` | Lock file location |
 

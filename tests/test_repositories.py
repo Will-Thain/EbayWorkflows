@@ -93,3 +93,35 @@ def test_candidate_repository_grouped_and_title_match(session: Session) -> None:
     grouped = repo.grouped_by_listing()
     assert len(grouped[listing.id]) == 1
     assert repo.title_match_listing_titles()[listing.id] == "Lightning Bolt"
+
+
+def test_listing_repository_upsert_and_pending_image(session: Session) -> None:
+    from datetime import datetime, timezone
+
+    from ebay_workflows.integrations.ebay import ListingRecord
+
+    now = datetime.now(timezone.utc)
+    repo = ListingRepository(session)
+    record = ListingRecord(
+        external_listing_id="ebay-upsert-1",
+        title="Sol Ring",
+        listing_url="https://example.com/up",
+        currency="EUR",
+        price_amount=3.0,
+        shipping_amount=None,
+        condition_text=None,
+        description_text=None,
+        image_urls=["https://example.com/img.jpg"],
+        raw_payload={"id": "ebay-upsert-1"},
+    )
+
+    created = repo.upsert_from_record(record, now=now)
+    assert created.created is True
+    img = repo.ensure_pending_image(created.listing.id, record.image_urls[0])
+    assert img is not None
+    assert repo.ensure_pending_image(created.listing.id, record.image_urls[0]) is None
+
+    record.title = "Sol Ring Revised"
+    updated = repo.upsert_from_record(record, now=now)
+    assert updated.created is False
+    assert updated.listing.title == "Sol Ring Revised"

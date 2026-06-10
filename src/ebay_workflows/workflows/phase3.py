@@ -13,6 +13,7 @@ from ..integrations.cardmarket import load_cardmarket_bulk_rows
 from ..models import CardPrice, ScryfallCard, WorkflowRun, WorkflowStep
 from ..persistence.repositories import CandidateRepository, ListingRepository
 from ..scoring.ev_guardrails import apply_price_to_evidence
+from ..operations.metrics import merge_phase_counters
 from ..workflow_errors import fail_workflow_step
 
 
@@ -154,12 +155,13 @@ def run_phase3_join(session: Session, settings: Settings) -> str:
 
         step.status = "succeeded"
         step.finished_at = _now()
-        step.metrics_json = {
-            "candidates_seen": len(candidates),
-            "prices_available": len(prices),
-            "candidates_joined": joined,
-            "candidates_skipped_no_scryfall_price": skipped_no_scryfall_price,
-        }
+        step.metrics_json = merge_phase_counters(
+            {},
+            candidates_seen=len(candidates),
+            prices_available=len(prices),
+            candidates_joined=joined,
+            candidates_skipped_no_scryfall_price=skipped_no_scryfall_price,
+        )
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()

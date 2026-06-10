@@ -12,10 +12,10 @@ from .bulk_lot_detection import (
     detect_lot_cards_from_image as _detect_lot_cards_from_image,
     detected_lot_cards_to_payload,
 )
-from ..recognition.catalog_index import CatalogIndex
+from .catalog_index import CatalogIndex
 
 if TYPE_CHECKING:
-    from ..recognition.embedding_index import EmbeddingMatch
+    from .embedding_index import EmbeddingMatch
 
 __all__ = [
     "DetectedLotCard",

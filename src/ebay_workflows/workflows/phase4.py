@@ -1,27 +1,22 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import Settings
-from ..models import Listing, ListingCardCandidate, ListingScore, WorkflowRun, WorkflowStep
+from ..models import Listing, ListingCardCandidate, ListingScore
 from ..persistence.repositories import CandidateRepository, ListingRepository, ListingScoreRepository
 from ..scoring.currency import listing_total_cost_base
 from ..scoring.ev_guardrails import cap_ev_adjusted
 from ..scoring.hybrid_scoring import compute_listing_score_hybrid
 from ..candidates.image_evidence import is_verified_candidate, select_pricing_candidate
+from ..operations.metrics import merge_phase_counters
 from ..operations.progress_report import emit_progress
 from ..operations.workflow_progress import publish_step_progress
+from ..operations.workflow_run import begin_phase_run, utc_now
 from ..workflow_errors import fail_workflow_step
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _to_decimal(value: float | Decimal | None, default: str = "0") -> Decimal:
@@ -101,25 +96,13 @@ def _compute_listing_score(
 
 def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool = False) -> str:
     scoring_version = "v2_hybrid" if use_hybrid else "v1"
-    run = WorkflowRun(
-        workflow_name=f"{settings.workflow_default_name}_phase4",
-        status="running",
-        input_config_json={"source": f"ev_ranking_{scoring_version}"},
-        started_at=_now(),
-    )
-    session.add(run)
-    session.flush()
-
-    step = WorkflowStep(
-        run_id=run.id,
-        step_name="phase4_ev_ranking",
+    run, step = begin_phase_run(
+        session,
+        workflow_default_name=settings.workflow_default_name,
         phase_number=4,
-        status="running",
-        attempt=1,
-        started_at=_now(),
+        step_name="phase4_ev_ranking",
+        input_config={"source": f"ev_ranking_{scoring_version}"},
     )
-    session.add(step)
-    session.flush()
 
     try:
         listing_repo = ListingRepository(session)
@@ -154,7 +137,7 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
                 existing.rank_value = calc["rank_value"]
                 existing.scoring_version = scoring_version
                 existing.explanation_json = calc["explanation"]
-                existing.updated_at = _now()
+                existing.updated_at = utc_now()
             else:
                 session.add(
                     ListingScore(
@@ -166,7 +149,7 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
                         rank_value=calc["rank_value"],
                         scoring_version=scoring_version,
                         explanation_json=calc["explanation"],
-                        updated_at=_now(),
+                        updated_at=utc_now(),
                     )
                 )
             scored += 1
@@ -175,14 +158,15 @@ def run_phase4_ranking(session: Session, settings: Settings, *, use_hybrid: bool
                 publish_step_progress(session, step, index, total_listings, unit="listings")
 
         step.status = "succeeded"
-        step.finished_at = _now()
-        step.metrics_json = {
-            "listings_seen": len(listings),
-            "scores_written": scored,
-            "skipped_lot_scores": skipped_lot_scores,
-        }
+        step.finished_at = utc_now()
+        step.metrics_json = merge_phase_counters(
+            {},
+            listings_seen=len(listings),
+            scores_written=scored,
+            skipped_lot_scores=skipped_lot_scores,
+        )
         run.status = "succeeded"
-        run.finished_at = _now()
+        run.finished_at = utc_now()
         session.commit()
     except Exception as exc:  # noqa: BLE001
         fail_workflow_step(session, step, run, exc)

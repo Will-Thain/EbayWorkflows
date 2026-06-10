@@ -17,6 +17,7 @@ from ..scoring.ev_guardrails import title_match_allowed_for_pricing
 from ..operations.match_event_log import log_positive_match, match_log_path
 from ..operations.listing_filters import is_bulk_lot_title
 from ..operations.progress_report import emit_progress
+from ..operations.metrics import merge_phase_counters
 from ..operations.workflow_sample import fetch_limited_listings
 from ..recognition import (
     CardMatchEntry,
@@ -257,16 +258,17 @@ def run_phase2_title_match(
 
         step.status = "succeeded"
         step.finished_at = _now()
-        step.metrics_json = {
-            "listings_seen": len(listings),
-            "listings_matched": matched_listings + skipped_listings,
-            "listings_skipped_unchanged": skipped_listings,
-            "listings_rematched": len(to_match),
-            "candidate_rows_created": candidate_rows,
-            "title_match_prefilter_size": settings.title_match_prefilter_size,
-            "title_match_score_cutoff": settings.title_match_score_cutoff,
-            "pipeline_max_title_match_workers": settings.pipeline_max_title_match_workers,
-        }
+        step.metrics_json = merge_phase_counters(
+            {},
+            listings_seen=len(listings),
+            listings_matched=matched_listings + skipped_listings,
+            listings_skipped_unchanged=skipped_listings,
+            listings_rematched=len(to_match),
+            candidate_rows_created=candidate_rows,
+            title_match_prefilter_size=settings.title_match_prefilter_size,
+            title_match_score_cutoff=settings.title_match_score_cutoff,
+            pipeline_max_title_match_workers=settings.pipeline_max_title_match_workers,
+        )
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()

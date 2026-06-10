@@ -131,8 +131,8 @@ Predefined jobs map 1:1 to existing CLI commands (no duplicate phase logic):
 | `phase3` | Join Cardmarket prices | `phase3-join-prices` | Seconds–minutes |
 | `sync_cm` | Sync Cardmarket bulk | `sync-cardmarket` | Minutes |
 | `phase4` | Rank (hybrid) | `phase4-rank --hybrid` | Minutes |
-| `phase5` | OCR + embeddings | `phase5-verify-ocr --use-real-ocr --use-embedding-match` | Hours |
-| `phase6` | Bulk lot detection | `phase6-detect-lots --use-real-detection` | Hours |
+| `phase5` | Image cascade (OCR + embeddings) | `phase5-verify-ocr --use-real-ocr --use-embedding-match` | Hours |
+| `phase6` | Bulk lot detection | `phase6-detect-lots --use-real-lot-detection` | Hours |
 | `integrity` | Data integrity check | `data-integrity-check` | Seconds |
 | `pipeline` | Resumable 1–6 | `run-resumable-pipeline ...` | Hours |
 

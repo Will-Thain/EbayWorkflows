@@ -2,27 +2,19 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..recognition.cascade_persist import cascade_regions_from_analysis
-from ..candidates.candidate_attach import (
-    candidates_for_region_evidence,
-    merge_verification_provenance,
-    update_candidate_ocr_confidence,
-    zone_evidence_with_provenance,
-)
+from ..candidates.candidate_attach import candidates_for_region_evidence
 from ..candidates.candidate_sync import apply_cascade_proposals_to_candidates
 from ..config import Settings
 from ..models import (
     ImageDetection,
-    Listing,
-    ListingCardCandidate,
     ListingImage,
     OcrResult,
     WorkflowRun,
@@ -31,25 +23,23 @@ from ..models import (
 from ..recognition.regions import CardRegion
 from ..recognition.embedding_index import apply_embedding_evidence, index_exists, propose_embedding_candidates
 from ..recognition.phase5_analysis import ImageAnalysisResult, analyze_listing_image
-from ..candidates.image_evidence import apply_per_listing_verification_gates, region_zone_evidence_matches_card
-from ..persistence.repositories import CandidateRepository, ListingRepository, ListingScoreRepository
-from ..operations.metrics import merge_tier7_into_metrics
+from ..candidates.image_evidence import apply_per_listing_verification_gates
+from ..persistence.repositories import CandidateRepository, ListingRepository
+from ..operations.metrics import merge_tier7_into_metrics, merge_phase_counters
 from ..operations.match_event_log import log_positive_match, match_log_path
 from ..operations.progress_report import emit_progress
 from ..operations.workflow_progress import publish_step_progress
 from ..operations.workflow_sample import fetch_limited_listing_images, limited_listing_ids, sample_scope_label
 from ..workflow_errors import fail_workflow_step
+from .phase5_persist import (
+    RegionPersistResult,
+    apply_region_evidence_to_candidates,
+    clear_card_regions,
+)
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-@dataclass(slots=True)
-class RegionPersistResult:
-    best_title: str | None
-    detection_id: Any
-    region_path: str
 
 
 def _load_mock_ocr(path: str) -> list[dict[str, Any]]:
@@ -57,105 +47,6 @@ def _load_mock_ocr(path: str) -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise ValueError("Mock OCR file must be a list of objects.")
     return payload
-
-
-def _clear_card_regions(session: Session, listing_image_id: Any) -> None:
-    existing_detection_ids = session.execute(
-        select(ImageDetection.id).where(
-            ImageDetection.listing_image_id == listing_image_id,
-            ImageDetection.detection_type == "card_region",
-        )
-    ).scalars().all()
-    if existing_detection_ids:
-        session.execute(delete(OcrResult).where(OcrResult.detection_id.in_(existing_detection_ids)))
-        session.execute(delete(ImageDetection).where(ImageDetection.id.in_(existing_detection_ids)))
-
-
-def _attach_zone_evidence_to_candidate(
-    candidate: ListingCardCandidate,
-    fields: dict[str, tuple[str, float]],
-    zone_evidence: dict[str, Any],
-    settings: Settings,
-    *,
-    listing_image_id: str,
-    detection_id: str,
-    region_path: str,
-) -> bool:
-    """Attach zone OCR/symbol evidence only to candidates the region plausibly references."""
-    if not candidate.scryfall_card:
-        return False
-
-    if not region_zone_evidence_matches_card(
-        zone_evidence,
-        fields,
-        candidate.scryfall_card,
-        settings,
-    ):
-        return False
-
-    zone_payload = zone_evidence_with_provenance(
-        zone_evidence,
-        listing_image_id=listing_image_id,
-        detection_id=detection_id,
-        region_path=region_path,
-    )
-    evidence = merge_verification_provenance(
-        dict(candidate.evidence_json or {}),
-        listing_image_id=listing_image_id,
-        detection_id=detection_id,
-        region_path=region_path,
-    )
-    evidence["zone_evidence"] = zone_payload
-    candidate.evidence_json = evidence
-    return True
-
-
-def _apply_region_evidence_to_candidates(
-    candidates: list[ListingCardCandidate],
-    *,
-    listing_image_id: str,
-    detection_id: str,
-    region_path: str,
-    ocr_title: str | None,
-    fields: dict[str, tuple[str, float]],
-    zone_evidence: dict[str, Any] | None,
-    settings: Settings,
-) -> int:
-    """Attach OCR and zone evidence to printings tied to this crop only."""
-    if not candidates:
-        return 0
-
-    ocr_targets = candidates_for_region_evidence(
-        candidates,
-        ocr_title=ocr_title,
-        fields=fields,
-        zone_evidence=zone_evidence,
-    )
-
-    updated = 0
-    for candidate in ocr_targets:
-        if ocr_title and update_candidate_ocr_confidence(
-            candidate,
-            ocr_title,
-            listing_image_id=listing_image_id,
-            detection_id=detection_id,
-            region_path=region_path,
-        ):
-            updated += 1
-
-    zone_targets = ocr_targets if ocr_targets else list(candidates)
-    for candidate in zone_targets:
-        if zone_evidence and _attach_zone_evidence_to_candidate(
-            candidate,
-            fields,
-            zone_evidence,
-            settings,
-            listing_image_id=listing_image_id,
-            detection_id=detection_id,
-            region_path=region_path,
-        ):
-            updated += 1
-    return updated
 
 
 def run_phase5_ocr_verification(
@@ -281,7 +172,7 @@ def run_phase5_ocr_verification(
 
         def _process_mock_row(listing_image: ListingImage, row: dict[str, Any]) -> None:
             nonlocal candidates_updated
-            _clear_card_regions(session, listing_image.id)
+            clear_card_regions(session, listing_image.id)
             fields: dict[str, tuple[str, float]] = {}
             title = (row.get("title") or "").strip()
             confidence = float(row.get("confidence", 0.9))
@@ -304,7 +195,7 @@ def run_phase5_ocr_verification(
                 engine_version="v1",
             )
             candidates = candidate_repo.for_listing(listing_image.listing_id)
-            candidates_updated += _apply_region_evidence_to_candidates(
+            candidates_updated += apply_region_evidence_to_candidates(
                 candidates,
                 listing_image_id=str(listing_image.id),
                 detection_id=str(persist.detection_id),
@@ -326,7 +217,7 @@ def run_phase5_ocr_verification(
                     for proposal in analysis.cascade.all_proposals
                     if getattr(proposal, "gate_status", None) != "verified"
                 )
-            _clear_card_regions(session, listing_image.id)
+            clear_card_regions(session, listing_image.id)
             candidates = candidate_repo.for_listing(listing_image.listing_id)
             listing = listing_repo.get(listing_image.listing_id)
             event_log = match_log_path(settings)
@@ -580,16 +471,17 @@ def run_phase5_ocr_verification(
         step.status = "succeeded"
         step.finished_at = _now()
         metrics = merge_tier7_into_metrics(
-            {
-                "detections_created": detections_created,
-                "ocr_rows_created": ocr_rows_created,
-                "candidates_updated": candidates_updated,
-                "embedding_updates": embedding_updates,
-                "embedding_enabled": embedding_enabled,
-                "pipeline_max_image_workers": getattr(settings, "pipeline_max_image_workers", 4),
-                "candidates_image_verified": candidates_verified,
-                "candidates_image_gated": candidates_gated,
-            },
+            merge_phase_counters(
+                {},
+                detections_created=detections_created,
+                ocr_rows_created=ocr_rows_created,
+                candidates_updated=candidates_updated,
+                embedding_updates=embedding_updates,
+                embedding_enabled=embedding_enabled,
+                pipeline_max_image_workers=getattr(settings, "pipeline_max_image_workers", 4),
+                candidates_image_verified=candidates_verified,
+                candidates_image_gated=candidates_gated,
+            ),
             proposals_raw=tier7_proposals_raw,
             post_veto=tier7_post_veto,
             verified=candidates_verified,

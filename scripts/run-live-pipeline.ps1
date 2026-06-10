@@ -40,7 +40,7 @@ if (-not $SkipPhase1) {
 & $cli sync-cardmarket
 & $cli phase5-verify-ocr --use-real-ocr --use-embedding-match
 & $cli phase3-join-prices
-& $cli phase6-detect-lots --use-real-detection
+& $cli phase6-detect-lots --use-real-lot-detection
 & $cli phase4-rank --hybrid
 New-Item -ItemType Directory -Force -Path ./data/exports | Out-Null
 & $cli export-rankings -o ./data/exports/ranked-live.json

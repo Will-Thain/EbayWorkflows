@@ -6,6 +6,25 @@ Define all required environment variables, defaults, and validation rules.
 
 Recognition/matching variables are **[Shipped]** unless noted **[Future]** in `documentation-status.md` (e.g. threshold calibration).
 
+## Environment variable prefixes
+
+| Prefix | Scope | Examples |
+|--------|-------|----------|
+| `VERIFY_*` | Trust / image verification thresholds | `VERIFY_NAME_HARD_MIN`, `VERIFY_SYMBOL_STRONG_MIN` |
+| `PHASE1_*` … `PHASE6_*` | Phase-specific pipeline behaviour | `PHASE5_SKIP_ANALYZED_IMAGES`, `PHASE6_BULK_LISTINGS_ONLY` |
+| `FAISS_*`, `OPENCLIP_*`, `TORCH_*` | Embedding index and GPU | `FAISS_INDEX_PATH`, `TORCH_DEVICE` |
+| `IMAGE_*`, `CARD_ZONE_*`, `LOT_CROP_*` | CV / OCR (shared with library via adapter) | `IMAGE_CACHE_DIR`, `OCR_ENGINE` |
+| `EBAY_*` | eBay Browse OAuth and ingest | `EBAY_CLIENT_ID`, `EBAY_PAGE_SIZE` |
+| `SCRYFALL_*`, `CARDMARKET_*` | Reference data providers | `SCRYFALL_BULK_URI` |
+| `TITLE_MATCH_*` | Phase 2 title fuzzy match | `TITLE_MATCH_SCORE_CUTOFF` |
+| `PIPELINE_*` | Workers, lock, resume | `PIPELINE_MAX_IMAGE_WORKERS`, `PIPELINE_LOCK_PATH` |
+| `GLOBAL_*` | Cross-provider rate limits | `GLOBAL_REQUESTS_PER_MINUTE_CAP` (eBay, Scryfall, Cardmarket, **image CDN**) |
+| `FX_*`, `EV_*`, `CARDMARKET_MAX_*` | Pricing / guardrails | `FX_GBP_TO_EUR`, `EV_MAX_LISTING_COST_MULTIPLE` |
+
+Phase-scoped flags use `PHASEn_`; trust knobs use `VERIFY_*` even when they affect Phase 5.
+
+**Removed:** `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` — unused; image downloads share `GLOBAL_REQUESTS_PER_MINUTE_CAP`.
+
 ## Core Runtime
 
 - `APP_ENV` (`local` default)

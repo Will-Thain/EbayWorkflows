@@ -29,7 +29,11 @@ def resolve_lot_crop_match(
     recognition = coerce_recognition_settings(settings)
     search_fn = None
     if index_exists(settings.faiss_index_path):
-        search_fn = lambda path: search_similar_cards(path, settings, top_k=settings.faiss_top_k)
+
+        def _search(path: str):
+            return search_similar_cards(path, settings, top_k=settings.faiss_top_k)
+
+        search_fn = _search
 
     return _resolve_lot_crop_match(
         ocr_title=ocr_title,

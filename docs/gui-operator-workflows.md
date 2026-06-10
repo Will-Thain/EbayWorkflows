@@ -39,7 +39,7 @@ Example **day-in-the-life** flows for the local desktop app. Assumes PostgreSQL,
    ebay-workflows phase2-match-title
    ebay-workflows phase5-verify-ocr --use-real-ocr --use-embedding-match
    ebay-workflows phase3-join-prices
-   ebay-workflows phase6-detect-lots --use-real-detection
+   ebay-workflows phase6-detect-lots --use-real-lot-detection
    ebay-workflows phase4-rank --hybrid
    ```
    Or use `./scripts/reanalyze-matching.ps1` for full matching re-run on cached images (clears OCR/detections first).

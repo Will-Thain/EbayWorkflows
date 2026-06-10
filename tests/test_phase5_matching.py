@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from ebay_workflows.candidates.image_evidence import candidate_has_image_evidence
-from ebay_workflows.workflows.phase5 import _apply_region_evidence_to_candidates
+from ebay_workflows.workflows.phase5_persist import apply_region_evidence_to_candidates
 
 
 def test_reprint_ocr_does_not_bleed_across_candidates() -> None:
@@ -25,7 +25,7 @@ def test_reprint_ocr_does_not_bleed_across_candidates() -> None:
         image_evidence_min_faiss_score=0.55,
         card_set_symbol_min_score=0.45,
     )
-    updated = _apply_region_evidence_to_candidates(
+    updated = apply_region_evidence_to_candidates(
         [bolt_lea, bolt_mkm],
         listing_image_id="img-1",
         detection_id="det-1",

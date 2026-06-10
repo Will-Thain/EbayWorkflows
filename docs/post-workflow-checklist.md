@@ -84,7 +84,7 @@ Only after §2–§4 are stable:
 
 | Task | Command / action |
 |------|------------------|
-| Phase 6 lot detection (CPU) | `$env:TORCH_DEVICE="cpu"` then `phase6-detect-lots --use-real-detection` → `phase4-rank --hybrid` |
+| Phase 6 lot detection (CPU) | `$env:TORCH_DEVICE="cpu"` then `phase6-detect-lots --use-real-lot-detection` → `phase4-rank --hybrid` |
 | Prune orphan image cache | `ebay-workflows prune-image-cache` (dry-run) then `--execute` |
 | Clear stale workflow rows | `ebay-workflows clear-stale-workflows --yes` |
 | GitHub default branch → `main` | Repo Settings → Default branch |
@@ -116,7 +116,7 @@ src/ebay_workflows/config.py  # Pydantic Settings; load YAML then env overrides
 - [ ] Slim `.env.example` to required secrets + paths + operational overrides; add comment block pointing here
 - [ ] Migrate operator `.env` — remove lines that match YAML defaults
 - [ ] Update `scripts/activate-dev.ps1` — `py -3.12`, `pip install -e ".[dev,gpu,gui]"`
-- [ ] Deprecate or document `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` vs `GLOBAL_REQUESTS_PER_MINUTE_CAP`
+- [x] Deprecate or document `IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE` vs `GLOBAL_REQUESTS_PER_MINUTE_CAP` — removed unused field; downloads use global cap only
 - [ ] `validate-env` — print which values came from YAML vs env vs default
 - [ ] Tests: YAML load, env override wins, missing required secret still fails
 

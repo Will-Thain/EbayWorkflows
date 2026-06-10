@@ -1,8 +1,15 @@
-"""Workflow metrics helpers (Tier 7 cascade funnel)."""
+"""Workflow metrics helpers (Tier 7 cascade funnel and phase counters)."""
 
 from __future__ import annotations
 
 from typing import Any
+
+
+def merge_phase_counters(metrics: dict[str, Any], **counters: Any) -> dict[str, Any]:
+    """Return a copy of metrics with standard phase counter keys added."""
+    merged = dict(metrics)
+    merged.update(counters)
+    return merged
 
 
 def tier7_metrics_payload(
