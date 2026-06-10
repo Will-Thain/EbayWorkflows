@@ -38,7 +38,7 @@ flowchart TB
 
   subgraph lib ["mtg-card-recognition (sibling)"]
     CASCADE[pipeline + cascade Tiers 0–8]
-    SER[evidence/serialize only]
+    SER[serialize package]
   end
 
   CLI --> PH
@@ -147,11 +147,24 @@ Detail: `card-recognition-architecture.md`, [`mtg-card-recognition/docs/integrat
 |-------|----------|--------|
 | OpenCV zones, align, crops | mtg-card-recognition | **[Shipped]** |
 | Cascade Tiers 0–8 + Tier 8 gate | mtg-card-recognition | **[Shipped]** |
-| Evidence serialization | mtg-card-recognition `evidence/serialize.py` | **[Shipped]** |
+| Evidence serialization | mtg-card-recognition `serialize/` | **[Shipped]** |
 | Row verification policy | EbayWorkflows `candidates/` (`candidate_gate`, `candidate_selection`) | **[Shipped]** |
 | OpenCLIP + FAISS | library search; consumer index build orchestration | **[Shipped]** |
 | Tesseract OCR | library; PaddleOCR **[Future]** |
 | Title fuzzy match | EbayWorkflows `recognition/title_match` | **[Shipped]** |
+
+## Phase 6 bulk-lot module names **[Shipped]**
+
+| Module | Role |
+|--------|------|
+| `recognition/bulk_lot_detection.py` | OpenCV contour multi-card detection (library-backed CV) |
+| `recognition/listing_lot_detection.py` | Phase 6 adapter: Settings → `bulk_lot_detection`, payload helpers |
+| `recognition/region_crop_match.py` | Per-crop cascade match via library `run_region_from_image` |
+| `recognition/lot_crop_match.py` | Phase 6 wrapper: Settings, FAISS hook, title index → `region_crop_match` |
+| `workflows/phase6.py` | Executor: `run_phase6_bulk_lot_detection` |
+| CLI | `phase6-detect-lots`; flag `--use-real-lot-detection` |
+
+`detection_type=lot_card` in DB distinguishes lot crops from Phase 5 `card_region` rows.
 
 **Historical [Historical]:** in-library `mtg_card_recognition.evidence` gate/attach and `pipeline/ebay_compat.RegionAnalysis` — removed in library v0.3.2.
 

@@ -12,7 +12,7 @@
 ## Test Layers
 
 - **unit tests** — parsing, scoring formulas, confidence composition, currency conversion
-- **recognition library tests** — cascade tiers, zone layouts, identifiers (serialization only in `evidence.serialize`)
+- **recognition library tests** — cascade tiers, zone layouts, identifiers (serialization in `mtg_card_recognition.serialize`)
 - **workflow integration tests** — `ebay_workflows.candidates`, `cascade_persist`, Phase 5 matching
 - **integration tests** — each connector with recorded fixtures
 - **repository/migration tests** — DB schema integrity, `ensure-db-indexes`

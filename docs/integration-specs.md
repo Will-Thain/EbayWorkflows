@@ -100,7 +100,7 @@ flowchart TB
   subgraph lib ["mtg-card-recognition v0.3.2+"]
     ALZ[analyze_listing_image]
     T8[Tier 8 cascade gate]
-    SER[evidence/serialize]
+    SER[serialize/]
   end
   subgraph ebay ["EbayWorkflows"]
     REC[recognition/]

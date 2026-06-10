@@ -131,7 +131,7 @@ flowchart TB
 
     PIPE[pipeline + cascade]
 
-    SER[evidence/serialize]
+    SER[serialize/]
 
   end
 

@@ -20,15 +20,56 @@ Provide clear semantic definitions for key persisted fields and provenance requi
 
 ## Candidate Matching
 
-- `source_method`: origin of candidate (`title_match`, `faiss_proposal`, …)
+- `source_method`: **column** — how the candidate row was created (see enum below)
 - `match_score`: normalized matching score for candidate ordering
 - `confidence_score`: confidence assigned to candidate
 - `rank_position`: Phase 2 ordering (1 = best title match)
 - `evidence_json`: structured trace of signals used to build candidate (see below)
 
+### `source_method` (column enum) **[Shipped]**
+
+Values persisted on `listing_card_candidates.source_method`:
+
+| Value | Set by | Meaning |
+|-------|--------|---------|
+| `title_match` | Phase 2 | Fuzzy title / set+collector match from listing text |
+| `faiss_proposal` | Phase 5 (optional) | Inserted when `FAISS_PROPOSE_CANDIDATES=true` and top-1 ∉ Phase 2 rows |
+
+**Log-only / nested strings** (not column values): `faiss_search`, `set_collector`, `zone_set_collector` — appear in `match_event_log` or `evidence_json.method` / `match_method`, not necessarily in `source_method`.
+
+Phase 2 also stores title-match detail inside `evidence_json`:
+
+- `method` or `match_method` — e.g. `fuzzy_title`, `set_collector` (title matcher output)
+- Do **not** confuse with `image_verification_source` (image gate outcome)
+
+### `evidence_json` — cascade fields (Phase 5) **[Shipped]**
+
+Written by `candidate_sync` from library serialize + zone payload:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `gate_status` | string \| null | Cascade Tier 8 outcome: `verified`, `blocked_at_gate`, … |
+| `gate_fail_reason` | string \| null | Why cascade blocked (when not verified) |
+| `verification_source` | string \| null | Library proposal field; see mapping below |
+| `cascade_region_id` | string | Region id from cascade attach |
+| `pricing_eligible` | bool | Library + row policy: may Phase 3 price this printing |
+
+When `gate_status` is present, row policy treats cascade as authoritative (`candidate_gate`).
+
+### Verification field mapping (library → consumer) **[Shipped]**
+
+| Library / cascade (serialize) | Canonical persisted (pricing/EV) | Notes |
+|------------------------------|----------------------------------|-------|
+| `gate_status` | `gate_status` | Copied into evidence |
+| `verification_source` | `image_verification_source` | Consumer renames on apply; gate reads both during transition |
+| (derived) | `image_verified` | Set by `candidate_gate` / selection |
+| `pricing_eligible` | `pricing_eligible` | Must be true with verified set_collector for Phase 3 |
+
+**Boundary:** library `printing_id` on proposals ≡ ORM `scryfall_id` (same UUID).
+
 ### `evidence_json` — image verification (Phase 5)
 
-Set by **EbayWorkflows `candidates/`** row policy (`candidate_gate`, `candidate_sync`, `candidate_attach`) after library cascade Tier 8; serialized fields from `mtg_card_recognition.evidence.serialize`:
+Set by **EbayWorkflows `candidates/`** row policy (`candidate_gate`, `candidate_sync`, `candidate_attach`) after library cascade Tier 8; serialized fields from `mtg_card_recognition.serialize`:
 
 | Field | Type | Meaning |
 |-------|------|---------|

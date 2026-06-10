@@ -52,7 +52,7 @@ flowchart LR
 | Title match, bulk-lot orchestration, set-symbol template build | `recognition/title_match`, `bulk_lot_detection`, `set_symbol_templates` |
 | Catalog from ORM rows | `recognition/catalog_index.py` |
 
-**Kept in library:** `evidence/serialize.py` only (`proposal_to_evidence`, `region_evidence_json`, `build_attach_rows`).
+**Kept in library:** `mtg_card_recognition.serialize` (`proposal_to_evidence`, `region_evidence_json`, `build_attach_rows`).
 
 ## Public library API (consumer imports)
 
