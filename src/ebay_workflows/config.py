@@ -188,12 +188,11 @@ class Settings(BaseSettings):
         if not 0 < self.phase6_min_crop_match_confidence <= 1:
             raise ValueError("PHASE6_MIN_CROP_MATCH_CONFIDENCE must be > 0 and <= 1")
 
-        try:
-            from mtg_card_recognition.embeddings.openclip import normalize_torch_device
-
-            normalize_torch_device(self.torch_device)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+        device_label = self.torch_device.strip().lower()
+        if device_label not in {"cpu", "cuda", "directml"}:
+            raise ValueError(
+                f"Unsupported TORCH_DEVICE '{self.torch_device}'. Use cpu, cuda, or directml."
+            )
 
         self.ebay_client_id = self._strip_optional(self.ebay_client_id)
         self.ebay_client_secret = self._strip_optional(self.ebay_client_secret)
