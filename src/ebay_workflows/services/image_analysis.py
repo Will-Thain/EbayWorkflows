@@ -1,18 +1,24 @@
-"""Shim: core listing image analysis lives in mtg_card_recognition.pipeline."""
+"""Phase 5 listing image analysis via mtg-card-recognition v0.3 cascade."""
 
 from __future__ import annotations
 
+from typing import Any
+
+from mtg_card_recognition.embeddings.search import EmbeddingMatch
+from mtg_card_recognition.pipeline.ebay_compat import (
+    RegionAnalysis,
+    catalog_from_scryfall_rows,
+    image_result_with_regions,
+    sidecar_from_catalog,
+)
 from mtg_card_recognition.pipeline.image_analysis import (
     ImageAnalysisResult,
-    RegionAnalysis,
-    analyze_listing_regions,
+    analyze_listing_image as _analyze_listing_image,
 )
 
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
-from mtg_card_recognition.zones.gate import assess_visible_card_regions
-
-from .embedding_index import EmbeddingMatch, index_exists, search_similar_cards
+from .embedding_index import index_exists, search_similar_cards
 
 
 def analyze_listing_image(
@@ -23,26 +29,36 @@ def analyze_listing_image(
     crop_dir: str,
     settings: Settings,
     use_embedding: bool,
+    scryfall_cards: list[Any] | None = None,
+    listing_title: str | None = None,
 ) -> ImageAnalysisResult:
+    """Run Tier 0 gate + full cascade for one listing image."""
+    recognition = coerce_recognition_settings(settings)
+    cards = scryfall_cards or []
+    catalog = catalog_from_scryfall_rows(cards)
+    sidecar = sidecar_from_catalog(catalog) if cards else None
+
     embedding_enabled = use_embedding and index_exists(settings.faiss_index_path)
 
     def _search(path: str) -> list[EmbeddingMatch]:
-        return search_similar_cards(path, settings, top_k=settings.faiss_top_k)
+        return search_similar_cards(
+            path,
+            recognition,
+            top_k=recognition.faiss_global_k_prime,
+        )
 
-    return analyze_listing_regions(
+    result = _analyze_listing_image(
         listing_image_id=listing_image_id,
         listing_id=listing_id,
         local_path=local_path,
         crop_dir=crop_dir,
-        settings=coerce_recognition_settings(settings),
-        gate_regions=lambda path, out_dir: assess_visible_card_regions(
-            path,
-            out_dir,
-            min_region_score=settings.image_min_region_score,
-            allow_full_frame_fallback=settings.image_allow_full_frame_fallback,
-        ),
-        search_embedding=_search if embedding_enabled else None,
+        catalog=catalog,
+        settings=recognition,
+        sidecar=sidecar,
+        listing_title=listing_title,
+        search_fn=_search if embedding_enabled else None,
     )
+    return image_result_with_regions(result)
 
 
 __all__ = [

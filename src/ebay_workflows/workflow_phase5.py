@@ -10,7 +10,8 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from mtg_card_recognition.evidence.attach import (
+from mtg_card_recognition.evidence import (
+    apply_cascade_proposals_to_candidates,
     candidates_for_region_evidence,
     merge_verification_provenance,
     update_candidate_ocr_confidence,
@@ -311,6 +312,8 @@ def run_phase5_ocr_verification(
             event_log = match_log_path(settings)
             listing_id_str = str(listing_image.listing_id)
             external_listing_id = listing.external_listing_id if listing else None
+            detection_id_by_region: dict[str, str] = {}
+            region_path_by_region: dict[str, str] = {}
 
             for region_analysis in analysis.regions:
                 region = region_analysis.region
@@ -336,6 +339,9 @@ def run_phase5_ocr_verification(
                     persist = None
 
                 if persist is not None:
+                    region_key = region_analysis.region_id or str(persist.detection_id)
+                    detection_id_by_region[region_key] = str(persist.detection_id)
+                    region_path_by_region[region_key] = persist.region_path
                     candidates_updated += _apply_region_evidence_to_candidates(
                         candidates,
                         listing_image_id=str(listing_image.id),
@@ -408,6 +414,34 @@ def run_phase5_ocr_verification(
                         settings=settings,
                     )
 
+            if analysis.cascade is not None:
+                candidates_updated += apply_cascade_proposals_to_candidates(
+                    candidates,
+                    analysis.cascade,
+                    listing_image_id=str(listing_image.id),
+                    detection_id_by_region=detection_id_by_region,
+                    region_path_by_region=region_path_by_region,
+                )
+
+        def _scryfall_cards_for_listing(listing_id: Any) -> list:
+            candidate_rows = session.execute(
+                select(ListingCardCandidate).where(ListingCardCandidate.listing_id == listing_id)
+            ).scalars().all()
+            cards = []
+            seen: set[str] = set()
+            for row in candidate_rows:
+                if row.scryfall_card is None and row.scryfall_id:
+                    session.refresh(row, attribute_names=["scryfall_card"])
+                card = row.scryfall_card
+                if card is None:
+                    continue
+                card_id = str(card.id)
+                if card_id in seen:
+                    continue
+                seen.add(card_id)
+                cards.append(card)
+            return cards
+
         def _run_parallel_real_ocr(images: list[ListingImage]) -> list[ImageAnalysisResult]:
             eligible = [img for img in images if img.local_path]
             if not eligible:
@@ -415,18 +449,22 @@ def run_phase5_ocr_verification(
             workers = max(1, int(getattr(settings, "pipeline_max_image_workers", 4)))
             results: list[ImageAnalysisResult] = []
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(
-                        analyze_listing_image,
-                        listing_image_id=str(img.id),
-                        listing_id=str(img.listing_id),
-                        local_path=img.local_path or "",
-                        crop_dir=crop_dir,
-                        settings=settings,
-                        use_embedding=embedding_enabled,
-                    ): img
-                    for img in eligible
-                }
+                futures = {}
+                for img in eligible:
+                    listing = session.get(Listing, img.listing_id)
+                    futures[
+                        executor.submit(
+                            analyze_listing_image,
+                            listing_image_id=str(img.id),
+                            listing_id=str(img.listing_id),
+                            local_path=img.local_path or "",
+                            crop_dir=crop_dir,
+                            settings=settings,
+                            use_embedding=embedding_enabled,
+                            scryfall_cards=_scryfall_cards_for_listing(img.listing_id),
+                            listing_title=listing.title if listing else None,
+                        )
+                    ] = img
                 total = len(futures)
                 if total:
                     emit_progress(0, total, unit="images")
