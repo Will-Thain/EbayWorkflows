@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic",
   "httpx",
-  "mtg-card-recognition @ git+https://github.com/Will-Thain/mtg-card-recognition.git@1e66016",
+  "mtg-card-recognition @ git+https://github.com/Will-Thain/mtg-card-recognition.git@eede35b",
   "paddleocr",
   "psycopg[binary]",
   "pydantic>=2",
