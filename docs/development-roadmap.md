@@ -86,7 +86,7 @@ See `gui-application.md` and `gui-build-prerequisites.md`.
 - Remote: https://github.com/Will-Thain/mtg-card-recognition
 
 Exit criteria:
-- tests pass against package imports; push to remote per REPO_BOOTSTRAP **[Ready]**
+- tests pass against package imports; push to remote per mtg-card-recognition README **[Ready]**
 
 ## Testing Strategy
 
