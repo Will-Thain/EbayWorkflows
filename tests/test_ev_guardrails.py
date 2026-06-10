@@ -10,7 +10,7 @@ from ebay_workflows.services.ev_guardrails import (
     sanitize_unit_price,
     title_match_allowed_for_pricing,
 )
-from ebay_workflows.services.listing_filters import is_bulk_lot_title, is_non_mtg_listing
+from ebay_workflows.services.listing_filters import is_bulk_lot_title, is_non_mtg_listing, is_probable_single_card_listing
 
 
 def _settings() -> SimpleNamespace:
@@ -39,8 +39,12 @@ def test_bulk_lot_title_rejected_for_pricing() -> None:
 def test_crop_match_evidence_allows_bulk_lot_pricing() -> None:
     card = SimpleNamespace(id="abc-123", name="Lightning Bolt", set_code="LEA", collector_number="1")
     match_evidence = {
-        "match_method": "set_collector",
-        "parsed_identifiers": {"set_code": "LEA", "collector_number": "1"},
+        "image_verified": True,
+        "image_verification_source": "set_collector",
+        "zone_evidence": {
+            "bottom_parsed": {"set_code": "lea", "collector_number": "1"},
+            "name_ocr": "Lightning Bolt",
+        },
     }
     allowed, reason = crop_match_allowed_for_pricing(
         "500 card bulk lot MTG magic",
@@ -59,6 +63,7 @@ def test_image_verified_candidate_bypasses_title_pricing_gate() -> None:
     evidence = {
         "image_verified": True,
         "image_verification_source": "set_collector",
+        "pricing_eligible": True,
         "match_score": 0.5,
     }
     allowed, reason = pricing_allowed_for_candidate(
@@ -97,5 +102,16 @@ def test_caps_ev_to_listing_multiple() -> None:
 
 def test_bulk_lot_title_detection() -> None:
     assert is_bulk_lot_title("MTG 500 card bulk job lot")
+    assert is_bulk_lot_title("MTG Lots - Rare and Mythic")
     assert not is_bulk_lot_title("Lightning Bolt M11 LP")
     assert is_non_mtg_listing("Official Magic hoodie black")
+
+
+def test_probable_single_card_listing() -> None:
+    assert is_probable_single_card_listing("Spider-Man 2099 150 MTG R NM")
+    assert is_probable_single_card_listing("NM Bloodbraid Elf Secret Lair 30th Anniversary")
+    assert not is_probable_single_card_listing("30 Rare Magic: The Gathering Cards - Booster Pack")
+    assert not is_probable_single_card_listing("Monster Protectors Prism Gold Playmat Tube")
+    assert not is_probable_single_card_listing("MTG Rares - 6 play sets - 24 Total")
+    assert not is_probable_single_card_listing("Magic the Gathering Card Bundles 50+ Cards")
+    assert not is_probable_single_card_listing("(5) Promo Foils Gargos Invoke Despair")

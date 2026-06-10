@@ -8,6 +8,7 @@ from ebay_workflows.cli_context import cli_session, load_settings
 
 from ebay_workflows.services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
 from ebay_workflows.services.ingest_helpers import resolve_max_pages
+from ebay_workflows.services.workflow_sample import with_sample_overrides
 from ebay_workflows.pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
 from ebay_workflows.workflow_phase2 import load_cards_from_cache, run_phase2_title_match
 from ebay_workflows.workflow_phase3 import run_phase3_join
@@ -18,9 +19,24 @@ from ebay_workflows.workflow_phase6 import run_phase6_bulk_lot_detection
 @app.command("phase2-match-title")
 def phase2_match_title(
     top_k: int = typer.Option(3, "--top-k", help="Top candidate cards retained per listing"),
+    max_listings: int | None = typer.Option(
+        None,
+        "--max-listings",
+        help="Process only the first N listings (smoke testing)",
+    ),
+    singles_only: bool = typer.Option(
+        False,
+        "--singles-only/--all-listings",
+        help="When combined with --max-listings, skip bulk-lot titles",
+    ),
 ) -> None:
     """Run Milestone 2 title-based listing to Scryfall matching."""
     with cli_session(action="start Phase 2") as (settings, session):
+        settings = with_sample_overrides(
+            settings,
+            max_listings=max_listings,
+            singles_only=singles_only if max_listings else None,
+        )
         # Ensure local cache is present and structured before matching.
         load_cards_from_cache(settings)
         run_id = run_phase2_title_match(session, settings=settings, top_k=top_k)
@@ -70,9 +86,30 @@ def phase5_verify_ocr(
         "--use-embedding-match/--no-use-embedding-match",
         help="Run OpenCLIP+FAISS similarity on crops when index exists",
     ),
+    max_listings: int | None = typer.Option(
+        None,
+        "--max-listings",
+        help="Process only the first N listings (smoke testing)",
+    ),
+    max_images: int | None = typer.Option(
+        None,
+        "--max-images",
+        help="Process only the first N listing images (smoke testing)",
+    ),
+    singles_only: bool = typer.Option(
+        False,
+        "--singles-only/--all-listings",
+        help="When combined with --max-listings, skip bulk-lot titles",
+    ),
 ) -> None:
     """Run Milestone 5 OCR verification to refine candidate confidence."""
     with cli_session(action="start Phase 5") as (settings, session):
+        settings = with_sample_overrides(
+            settings,
+            max_listings=max_listings,
+            max_images=max_images,
+            singles_only=singles_only if max_listings else None,
+        )
         run_id = run_phase5_ocr_verification(
             session,
             settings,
@@ -96,9 +133,30 @@ def phase6_detect_lots(
         "--use-real-detection/--no-use-real-detection",
         help="Detect multiple cards per image with OpenCV + OCR on local listing images",
     ),
+    max_listings: int | None = typer.Option(
+        None,
+        "--max-listings",
+        help="Process only the first N listings (smoke testing)",
+    ),
+    max_images: int | None = typer.Option(
+        None,
+        "--max-images",
+        help="Process only the first N listing images (smoke testing)",
+    ),
+    singles_only: bool = typer.Option(
+        False,
+        "--singles-only/--all-listings",
+        help="When combined with --max-listings, skip bulk-lot titles",
+    ),
 ) -> None:
     """Run Milestone 6 bulk-lot multi-card detection and EV adjustment."""
     with cli_session(action="start Phase 6") as (settings, session):
+        settings = with_sample_overrides(
+            settings,
+            max_listings=max_listings,
+            max_images=max_images,
+            singles_only=singles_only if max_listings else None,
+        )
         run_id = run_phase6_bulk_lot_detection(
             session,
             settings,
@@ -202,6 +260,21 @@ def run_resumable_pipeline_cmd(
         "--resume/--no-resume",
         help="Skip already-complete phases based on persisted data",
     ),
+    max_listings: int | None = typer.Option(
+        None,
+        "--max-listings",
+        help="Process only the first N listings in phases 2/5/6 (smoke testing)",
+    ),
+    max_images: int | None = typer.Option(
+        None,
+        "--max-images",
+        help="Process only the first N listing images in phases 5/6 (smoke testing)",
+    ),
+    singles_only: bool = typer.Option(
+        False,
+        "--singles-only/--all-listings",
+        help="When combined with --max-listings, skip bulk-lot titles",
+    ),
 ) -> None:
     """Run phases 1-6 with replay/resume safety and phase skipping."""
     settings = load_settings(action="start resumable pipeline")
@@ -220,6 +293,9 @@ def run_resumable_pipeline_cmd(
         from_phase=from_phase,
         to_phase=to_phase,
         resume=resume,
+        workflow_max_listings=max_listings,
+        workflow_max_images=max_images,
+        workflow_singles_only=singles_only,
     )
 
     with cli_session(action="start resumable pipeline", settings=settings) as (_, session):

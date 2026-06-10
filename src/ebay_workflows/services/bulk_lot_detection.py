@@ -1,15 +1,19 @@
-"""Shim: bulk lot detection lives in mtg_card_recognition.pipeline."""
+"""Phase 6 bulk lot detection — v0.3 cascade per crop."""
 
 from __future__ import annotations
 
-from mtg_card_recognition.pipeline.bulk_detect import (
+from collections.abc import Callable
+
+from mtg_card_recognition.catalog.lookup import CatalogIndex
+from mtg_card_recognition.embeddings.search import EmbeddingMatch
+
+from ..adapters.recognition_settings import coerce_recognition_settings
+from ..config import Settings
+from ..recognition.bulk_lot_detection import (
     DetectedLotCard,
     detect_lot_cards_from_image as _detect_lot_cards_from_image,
     detected_lot_cards_to_payload,
 )
-
-from ..adapters.recognition_settings import coerce_recognition_settings
-from ..config import Settings
 
 __all__ = [
     "DetectedLotCard",
@@ -21,7 +25,9 @@ __all__ = [
 def detect_lot_cards_from_image(
     image_path: str,
     crop_dir: str,
+    catalog: CatalogIndex,
     *,
+    search_fn: Callable[[str], list[EmbeddingMatch]] | None = None,
     ocr_engine: str = "pytesseract",
     tesseract_cmd: str | None = None,
     max_cards: int = 12,
@@ -45,6 +51,8 @@ def detect_lot_cards_from_image(
         image_path,
         crop_dir,
         recognition,
+        catalog,
+        search_fn=search_fn,
         max_cards=max_cards,
         min_area_ratio=min_area_ratio,
         min_region_score=min_region_score,

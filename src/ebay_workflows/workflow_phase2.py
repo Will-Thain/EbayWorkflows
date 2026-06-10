@@ -16,11 +16,12 @@ from .services.ev_guardrails import title_match_allowed_for_pricing
 from .services.match_event_log import log_positive_match, match_log_path
 from .services.listing_filters import is_bulk_lot_title
 from .services.progress_report import emit_progress
-from mtg_card_recognition.identifiers import build_set_collector_index
-from mtg_card_recognition.title.match import (
+from .services.workflow_sample import fetch_limited_listings
+from .recognition import (
     CardMatchEntry,
     ScryfallTitleIndex,
     TitleMatchResult,
+    build_set_collector_index,
     match_listings_parallel,
 )
 from .services.workflow_progress import publish_step_progress
@@ -184,7 +185,7 @@ def run_phase2_title_match(
     session.flush()
 
     try:
-        listings = session.execute(select(Listing)).scalars().all()
+        listings = fetch_limited_listings(session, settings)
         card_rows = session.execute(
             select(
                 ScryfallCard.id,

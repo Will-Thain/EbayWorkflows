@@ -1,4 +1,4 @@
-"""eBay integration for set-symbol templates: DB iteration; build/match in package."""
+"""eBay integration for set-symbol templates: DB iteration; match in library."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Iterable
 
 from mtg_card_recognition.catalog import PrintingRecord
 from mtg_card_recognition.zones.symbol import (
-    build_set_symbol_templates_from_printings,
     clear_set_symbol_template_cache,
     match_set_symbol as _match_set_symbol,
     set_symbol_template_dir as _set_symbol_template_dir,
@@ -18,6 +17,7 @@ from sqlalchemy.orm import Session
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
 from ..models import ScryfallCard
+from ..recognition.set_symbol_templates import build_set_symbol_templates_from_printings
 
 
 def set_symbol_template_dir(settings: Settings) -> Path:

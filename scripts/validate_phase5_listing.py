@@ -12,8 +12,9 @@ from ebay_workflows.db import build_session_factory
 from ebay_workflows.models import ImageDetection, Listing, ListingCardCandidate, ListingImage, OcrResult
 from ebay_workflows.services.embedding_index import index_exists, propose_embedding_candidates, apply_embedding_evidence
 from ebay_workflows.services.image_analysis import analyze_listing_image
+from ebay_workflows.recognition.cascade_persist import cascade_regions_from_analysis
+from ebay_workflows.services.candidate_sync import apply_cascade_proposals_to_candidates
 from ebay_workflows.services.image_evidence import apply_per_listing_verification_gates
-from mtg_card_recognition.evidence import apply_cascade_proposals_to_candidates
 from ebay_workflows.workflow_phase5 import (
     RegionPersistResult,
     _apply_region_evidence_to_candidates,
@@ -185,15 +186,16 @@ def main() -> None:
                 print("  SKIPPED (no visible cards / tier0)")
                 continue
 
-            print(f"  regions={len(analysis.regions)} cascade={analysis.cascade is not None}")
+            region_views = cascade_regions_from_analysis(analysis)
+            print(f"  regions={len(region_views)} cascade={analysis.cascade is not None}")
 
             detection_id_by_region: dict[str, str] = {}
             region_path_by_region: dict[str, str] = {}
 
-            for region_analysis in analysis.regions:
-                region = region_analysis.region
-                fields = region_analysis.fields
-                zone_evidence = region_analysis.zone_evidence
+            for region_view in region_views:
+                region = region_view.region
+                fields = region_view.fields
+                zone_evidence = region_view.zone_evidence
                 total_regions += 1
 
                 if fields:
@@ -220,7 +222,7 @@ def main() -> None:
                     continue
 
                 total_detections += 1
-                region_key = region_analysis.region_id or str(persist.detection_id)
+                region_key = region_view.region_id or str(persist.detection_id)
                 detection_id_by_region[region_key] = str(persist.detection_id)
                 region_path_by_region[region_key] = persist.region_path
                 print(
@@ -239,17 +241,17 @@ def main() -> None:
                     settings=settings,
                 )
 
-                if region_analysis.embedding_matches:
+                if region_view.embedding_matches:
                     embedding_updates += propose_embedding_candidates(
                         session,
                         listing.id,
                         candidates,
-                        region_analysis.embedding_matches,
+                        region_view.embedding_matches,
                         settings,
                     )
                     embedding_updates += apply_embedding_evidence(
                         candidates,
-                        region_analysis.embedding_matches,
+                        region_view.embedding_matches,
                         listing_id=listing.id,
                         settings=settings,
                     )

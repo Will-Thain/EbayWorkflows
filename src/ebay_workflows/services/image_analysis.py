@@ -5,12 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from mtg_card_recognition.embeddings.search import EmbeddingMatch
-from mtg_card_recognition.pipeline.ebay_compat import (
-    RegionAnalysis,
-    catalog_from_scryfall_rows,
-    image_result_with_regions,
-    sidecar_from_catalog,
-)
 from mtg_card_recognition.pipeline.image_analysis import (
     ImageAnalysisResult,
     analyze_listing_image as _analyze_listing_image,
@@ -18,6 +12,7 @@ from mtg_card_recognition.pipeline.image_analysis import (
 
 from ..adapters.recognition_settings import coerce_recognition_settings
 from ..config import Settings
+from ..recognition.catalog_index import catalog_from_scryfall_rows, sidecar_from_catalog
 from .embedding_index import index_exists, search_similar_cards
 
 
@@ -47,7 +42,7 @@ def analyze_listing_image(
             top_k=recognition.faiss_global_k_prime,
         )
 
-    result = _analyze_listing_image(
+    return _analyze_listing_image(
         listing_image_id=listing_image_id,
         listing_id=listing_id,
         local_path=local_path,
@@ -58,11 +53,9 @@ def analyze_listing_image(
         listing_title=listing_title,
         search_fn=_search if embedding_enabled else None,
     )
-    return image_result_with_regions(result)
 
 
 __all__ = [
     "ImageAnalysisResult",
-    "RegionAnalysis",
     "analyze_listing_image",
 ]

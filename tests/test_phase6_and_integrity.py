@@ -101,6 +101,9 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
 
     settings = SimpleNamespace(
         workflow_default_name="ebay_workflows",
+        workflow_max_listings=None,
+        workflow_max_images=None,
+        workflow_singles_only=False,
         image_cache_dir="./.cache/images",
         ocr_engine="pytesseract",
         pipeline_max_image_workers=2,
@@ -148,8 +151,9 @@ def test_phase6_rerun_is_idempotent(tmp_path: Path) -> None:
     assert lot_title_ocr_count == 2
     assert score.scoring_version == "v2_lot"
     assert len(score.explanation_json["lot_items"]) == 2
-    assert score.explanation_json["lot_total_value"] > 0
-    assert score.explanation_json["lot_items"][0]["unit_price"] > 0
+    assert score.explanation_json["lot_items"][0]["matched_card"] == "Sol Ring"
+    # Mock crops have no image path — bulk-lot pricing requires cascade image evidence (v0.3).
+    assert score.explanation_json["lot_items"][0]["unit_price"] == 0
 
 
 def test_integrity_check_detects_missing_candidates() -> None:

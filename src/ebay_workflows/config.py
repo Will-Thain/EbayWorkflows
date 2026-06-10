@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     )
     phase5_skip_analyzed_images: bool = Field(default=False, alias="PHASE5_SKIP_ANALYZED_IMAGES")
     phase6_skip_analyzed_images: bool = Field(default=False, alias="PHASE6_SKIP_ANALYZED_IMAGES")
+    workflow_max_listings: int | None = Field(default=None, alias="WORKFLOW_MAX_LISTINGS")
+    workflow_max_images: int | None = Field(default=None, alias="WORKFLOW_MAX_IMAGES")
+    workflow_singles_only: bool = Field(default=False, alias="WORKFLOW_SINGLES_ONLY")
     pipeline_lock_path: str = Field(default="./.cache/pipeline.lock", alias="PIPELINE_LOCK_PATH")
     pipeline_enforce_single_run: bool = Field(default=True, alias="PIPELINE_ENFORCE_SINGLE_RUN")
     image_download_requests_per_minute: int = Field(default=120, alias="IMAGE_DOWNLOAD_REQUESTS_PER_MINUTE")
@@ -163,6 +166,13 @@ class Settings(BaseSettings):
 
         if self.db_pool_min > self.db_pool_max:
             raise ValueError("DB_POOL_MIN cannot be greater than DB_POOL_MAX")
+
+        for key, value in (
+            ("WORKFLOW_MAX_LISTINGS", self.workflow_max_listings),
+            ("WORKFLOW_MAX_IMAGES", self.workflow_max_images),
+        ):
+            if value is not None and value <= 0:
+                raise ValueError(f"{key} must be a positive integer when set")
 
         if not 0 < self.title_match_score_cutoff <= 100:
             raise ValueError("TITLE_MATCH_SCORE_CUTOFF must be > 0 and <= 100")

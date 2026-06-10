@@ -24,11 +24,12 @@ from .models import (
 )
 from mtg_card_recognition.identifiers import (
     ParsedCardIdentifiers,
-    build_set_collector_index,
     normalize_collector_number,
     normalize_set_code,
 )
-from mtg_card_recognition.title.match import CardMatchEntry, ScryfallTitleIndex
+from .recognition.catalog_index import catalog_from_scryfall_rows
+
+from .recognition import CardMatchEntry, ScryfallTitleIndex, build_set_collector_index
 
 from .services.bulk_lot_detection import (
     detect_lot_cards_from_image,
@@ -42,6 +43,7 @@ from .services.match_event_log import log_positive_match, match_log_path
 from .services.progress_report import emit_progress
 from .services.lot_crop_match import resolve_lot_crop_match
 from .services.workflow_progress import publish_step_progress
+from .services.workflow_sample import fetch_limited_listing_images, fetch_limited_listings, sample_scope_label
 from .workflow_errors import fail_workflow_step
 
 
@@ -67,12 +69,11 @@ def _load_mock_lot(path: str) -> list[dict[str, Any]]:
 def _best_card_match(
     title: str,
     card_item: dict[str, Any],
+    catalog: Any,
     title_index: ScryfallTitleIndex,
     set_collector_index: dict[tuple[str, str], str],
     card_by_id: dict[str, ScryfallCard],
     settings: Settings,
-    *,
-    faiss_enabled: bool,
 ) -> tuple[ScryfallCard | None, float, dict[str, Any]]:
     extra = ParsedCardIdentifiers(
         set_code=normalize_set_code((card_item.get("set_code") or "").strip() or None),
@@ -81,12 +82,12 @@ def _best_card_match(
     return resolve_lot_crop_match(
         ocr_title=title,
         crop_path=card_item.get("crop_path"),
+        catalog=catalog,
         title_index=title_index,
         set_collector_index=set_collector_index,
         card_by_id=card_by_id,
         settings=settings,
         extra_identifiers=extra,
-        faiss_enabled=faiss_enabled,
     )
 
 
@@ -107,6 +108,7 @@ def _process_lot_cards_for_image(
     listing_image: ListingImage,
     listing: Listing,
     detected_cards: list[dict[str, Any]],
+    catalog: Any,
     title_index: ScryfallTitleIndex,
     card_by_id: dict[str, ScryfallCard],
     latest_price_by_card: dict[str, CardPrice],
@@ -115,7 +117,6 @@ def _process_lot_cards_for_image(
     engine_name: str,
     settings: Settings,
     set_collector_index: dict[tuple[str, str], str],
-    faiss_enabled: bool,
 ) -> tuple[int, int, dict[str, Any] | None]:
     """Returns detections_created, ocr_rows_created, lot_score_explanation or None."""
     if not detected_cards:
@@ -168,11 +169,11 @@ def _process_lot_cards_for_image(
         card_match, match_score, match_evidence = _best_card_match(
             title,
             card_item,
+            catalog,
             title_index,
             set_collector_index,
             card_by_id,
             settings,
-            faiss_enabled=faiss_enabled,
         )
         if card_match:
             log_positive_match(
@@ -327,9 +328,16 @@ def run_phase6_bulk_lot_detection(
     session.flush()
 
     try:
-        listing_images = session.execute(select(ListingImage)).scalars().all()
+        listing_images = fetch_limited_listing_images(session, settings)
+        sample_label = sample_scope_label(settings)
+        if sample_label:
+            print(
+                f"ebay-workflows-info Phase 6 sample scope: {sample_label} "
+                f"({len(listing_images)} images selected)",
+                flush=True,
+            )
         image_by_url = {img.source_url: img for img in listing_images}
-        listings = session.execute(select(Listing)).scalars().all()
+        listings = fetch_limited_listings(session, settings)
         listing_by_id = {listing.id: listing for listing in listings}
         cards = session.execute(select(ScryfallCard)).scalars().all()
         card_by_id = {str(card.id): card for card in cards}
@@ -347,7 +355,7 @@ def run_phase6_bulk_lot_detection(
         set_collector_index = build_set_collector_index(
             [(str(card.id), card.set_code, card.collector_number) for card in cards]
         )
-        faiss_enabled = bool(getattr(settings, "phase6_use_faiss_crop_match", True))
+        catalog = catalog_from_scryfall_rows(cards)
         prices = session.execute(select(CardPrice)).scalars().all()
         latest_price_by_card: dict[str, CardPrice] = {}
         for price in prices:
@@ -384,6 +392,7 @@ def run_phase6_bulk_lot_detection(
                     listing_image,
                     listing,
                     detected_cards,
+                    catalog,
                     title_index,
                     card_by_id,
                     latest_price_by_card,
@@ -391,7 +400,6 @@ def run_phase6_bulk_lot_detection(
                     engine_name="mock",
                     settings=settings,
                     set_collector_index=set_collector_index,
-                    faiss_enabled=faiss_enabled,
                 )
                 if d or o:
                     detections_created += d
@@ -420,10 +428,18 @@ def run_phase6_bulk_lot_detection(
                 eligible.append(img)
             workers = max(1, int(getattr(settings, "pipeline_max_image_workers", 4)))
 
+            from .services.embedding_index import index_exists, search_similar_cards
+
+            search_fn = None
+            if index_exists(settings.faiss_index_path):
+                search_fn = lambda path: search_similar_cards(path, settings, top_k=settings.faiss_top_k)
+
             def _detect_payload(image_id: str, local_path: str) -> tuple[str, list[dict[str, Any]]]:
                 lot_cards = detect_lot_cards_from_image(
                     local_path,
                     crop_dir,
+                    catalog,
+                    search_fn=search_fn,
                     ocr_engine=settings.ocr_engine,
                     tesseract_cmd=settings.tesseract_cmd,
                     min_region_score=settings.image_min_region_score,
@@ -467,6 +483,7 @@ def run_phase6_bulk_lot_detection(
                     listing_image,
                     listing,
                     payload,
+                    catalog,
                     title_index,
                     card_by_id,
                     latest_price_by_card,
@@ -474,7 +491,6 @@ def run_phase6_bulk_lot_detection(
                     engine_name=settings.ocr_engine,
                     settings=settings,
                     set_collector_index=set_collector_index,
-                    faiss_enabled=faiss_enabled,
                 )
                 if d or o:
                     detections_created += d

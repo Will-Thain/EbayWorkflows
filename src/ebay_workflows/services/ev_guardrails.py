@@ -42,9 +42,9 @@ def pricing_allowed_for_candidate(
     Allow Cardmarket pricing when image evidence confirms the match, otherwise
     fall back to title-match guardrails (bulk lots require crop evidence).
     """
-    if evidence.get("image_verified"):
+    if evidence.get("image_verified") and evidence.get("pricing_eligible"):
         source = evidence.get("image_verification_source")
-        if source in {"set_collector", "set_symbol"}:
+        if source == "set_collector":
             return True, None
 
     return title_match_allowed_for_pricing(

@@ -1,24 +1,25 @@
-"""Shim: recognition evidence lives in mtg_card_recognition."""
+"""Listing candidate verification — workflow policy on persisted evidence rows."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from mtg_card_recognition.evidence import (
+from ..adapters.recognition_settings import coerce_recognition_settings
+from ..config import Settings
+from .candidate_gate import (
     apply_image_evidence_gate as _apply_image_evidence_gate,
-    apply_per_listing_verification_gates as _apply_per_listing_verification_gates,
     candidate_has_image_evidence as _candidate_has_image_evidence,
     demote_image_verification,
     evaluate_image_verification,
     is_verified_candidate,
     match_evidence_has_image_evidence as _match_evidence_has_image_evidence,
     region_zone_evidence_matches_card as _region_zone_evidence_matches_card,
-    select_pricing_candidate,
     verification_strength,
 )
-
-from ..adapters.recognition_settings import coerce_recognition_settings
-from ..config import Settings
+from .candidate_selection import (
+    apply_per_listing_verification_gates as _apply_per_listing_verification_gates,
+    select_pricing_candidate,
+)
 
 __all__ = [
     "apply_image_evidence_gate",

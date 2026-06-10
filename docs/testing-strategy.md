@@ -12,7 +12,8 @@
 ## Test Layers
 
 - **unit tests** — parsing, scoring formulas, confidence composition, currency conversion
-- **recognition library tests** — `mtg_card_recognition.evidence` gate, region attach, zone layouts, identifiers
+- **recognition library tests** — cascade tiers, zone layouts, identifiers (serialization only in `evidence.serialize`)
+- **workflow integration tests** — `ebay_workflows.services.candidate_gate`, `cascade_persist`, Phase 5 matching
 - **integration tests** — each connector with recorded fixtures
 - **repository/migration tests** — DB schema integrity, `ensure-db-indexes`
 - **workflow orchestration tests** — checkpoint/resume, pipeline lock, Phase 6 idempotency
@@ -61,6 +62,23 @@ Assert that `image_verification_source` is only `set_collector` or `set_symbol` 
 - OpenCLIP + FAISS retrieval sanity (`test_embedding_index.py`, `test_faiss_batch.py`)
 - hybrid scorer vs OCR-only and embedding-only baselines (`test_hybrid_scoring.py`)
 - Scryfall layout → zone selection (`test_layout_scryfall.py`)
+
+## Iterative smoke tiers **[Shipped]**
+
+Scale validation in small steps before full-corpus reruns:
+
+| Tier | Command | Scope | Typical runtime |
+|------|---------|-------|-----------------|
+| 0 | `.\scripts\run-smoke-pipeline.ps1 -Tier 0` | pytest + single-listing Phase 5 (`validate_phase5_listing.py`) | seconds–minutes |
+| 1 | `.\scripts\run-smoke-pipeline.ps1 -Tier 1` | 1 eBay page, 10 listings, 30 images | minutes |
+| 2 | `-Tier 2` | 3 pages, 50 listings, 200 images | tens of minutes |
+| 3 | `-Tier 3` | full corpus (no sample caps) | hours |
+
+Use `-ClearMatchData` on tier 1+ when re-testing matching logic on an existing DB. Use `-SkipIngest` to reuse current listings. CLI flags `--max-listings` / `--max-images` and env `WORKFLOW_MAX_*` apply the same caps to phases 2, 5, and 6.
+
+Per-tier checklist: imports OK, Phase 2 candidates, Phase 5 regions + cascade, FAISS propose, gate fields (`bottom_parsed`, `image_verified`), Phase 3 prices joined, Phase 4 `rank_value > 0` on known-good singles, integrity check green.
+
+Reference listing for bulk-lot cascade: prefix `6ea4f4d3` (multi-card, strict gate expected). Labeled crops: `mtg-card-recognition/tests/fixtures/labeled_crops/`.
 
 ## Regression Dataset **[Future]**
 

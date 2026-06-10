@@ -10,13 +10,14 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from mtg_card_recognition.evidence import (
-    apply_cascade_proposals_to_candidates,
+from .recognition.cascade_persist import cascade_regions_from_analysis
+from .services.candidate_attach import (
     candidates_for_region_evidence,
     merge_verification_provenance,
     update_candidate_ocr_confidence,
     zone_evidence_with_provenance,
 )
+from .services.candidate_sync import apply_cascade_proposals_to_candidates
 from .config import Settings
 from .models import (
     ImageDetection,
@@ -34,6 +35,7 @@ from .services.image_evidence import apply_per_listing_verification_gates, regio
 from .services.match_event_log import log_positive_match, match_log_path
 from .services.progress_report import emit_progress
 from .services.workflow_progress import publish_step_progress
+from .services.workflow_sample import fetch_limited_listing_images, limited_listing_ids, sample_scope_label
 from .workflow_errors import fail_workflow_step
 
 
@@ -168,6 +170,8 @@ def run_phase5_ocr_verification(
             "mock_ocr_file": mock_ocr_file,
             "use_real_ocr": use_real_ocr,
             "use_embedding_match": use_embedding_match,
+            "workflow_max_listings": settings.workflow_max_listings,
+            "workflow_max_images": settings.workflow_max_images,
         },
         started_at=_now(),
     )
@@ -186,7 +190,14 @@ def run_phase5_ocr_verification(
     session.flush()
 
     try:
-        listing_images = session.execute(select(ListingImage)).scalars().all()
+        listing_images = fetch_limited_listing_images(session, settings)
+        sample_label = sample_scope_label(settings)
+        if sample_label:
+            print(
+                f"ebay-workflows-info Phase 5 sample scope: {sample_label} "
+                f"({len(listing_images)} images selected)",
+                flush=True,
+            )
         images_skipped_no_visible_cards = 0
         detections_created = 0
         ocr_rows_created = 0
@@ -315,10 +326,10 @@ def run_phase5_ocr_verification(
             detection_id_by_region: dict[str, str] = {}
             region_path_by_region: dict[str, str] = {}
 
-            for region_analysis in analysis.regions:
-                region = region_analysis.region
-                fields = region_analysis.fields
-                zone_evidence = region_analysis.zone_evidence
+            for region_view in cascade_regions_from_analysis(analysis):
+                region = region_view.region
+                fields = region_view.fields
+                zone_evidence = region_view.zone_evidence
 
                 if fields:
                     persist = _persist_region_detection(
@@ -339,7 +350,7 @@ def run_phase5_ocr_verification(
                     persist = None
 
                 if persist is not None:
-                    region_key = region_analysis.region_id or str(persist.detection_id)
+                    region_key = region_view.region_id or str(persist.detection_id)
                     detection_id_by_region[region_key] = str(persist.detection_id)
                     region_path_by_region[region_key] = persist.region_path
                     candidates_updated += _apply_region_evidence_to_candidates(
@@ -384,8 +395,8 @@ def run_phase5_ocr_verification(
                                 log_path=event_log,
                             )
 
-                if region_analysis.embedding_matches:
-                    top = region_analysis.embedding_matches[0]
+                if region_view.embedding_matches:
+                    top = region_view.embedding_matches[0]
                     top_score = float(getattr(top, "score", 0.0))
                     if top_score >= settings.image_evidence_min_faiss_score:
                         log_positive_match(
@@ -404,12 +415,12 @@ def run_phase5_ocr_verification(
                         session,
                         listing_image.listing_id,
                         candidates,
-                        region_analysis.embedding_matches,
+                        region_view.embedding_matches,
                         settings,
                     )
                     embedding_updates += apply_embedding_evidence(
                         candidates,
-                        region_analysis.embedding_matches,
+                        region_view.embedding_matches,
                         listing_id=listing_image.listing_id,
                         settings=settings,
                     )
@@ -539,7 +550,11 @@ def run_phase5_ocr_verification(
         else:
             raise ValueError("Provide --mock-ocr-file or enable --use-real-ocr.")
 
-        all_candidates = session.execute(select(ListingCardCandidate)).scalars().all()
+        all_candidates_stmt = select(ListingCardCandidate)
+        sample_ids = limited_listing_ids(session, settings)
+        if sample_ids is not None:
+            all_candidates_stmt = all_candidates_stmt.where(ListingCardCandidate.listing_id.in_(sample_ids))
+        all_candidates = session.execute(all_candidates_stmt).scalars().all()
         for candidate in all_candidates:
             if candidate.scryfall_card is None and candidate.scryfall_id:
                 session.refresh(candidate, attribute_names=["scryfall_card"])

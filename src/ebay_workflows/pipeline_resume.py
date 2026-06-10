@@ -15,6 +15,7 @@ from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
 from .workflow_phase4 import run_phase4_ranking
 from .workflow_phase5 import run_phase5_ocr_verification
 from .workflow_phase6 import run_phase6_bulk_lot_detection
+from .services.workflow_sample import with_sample_overrides
 
 
 @dataclass(slots=True)
@@ -31,6 +32,9 @@ class ResumablePipelineConfig:
     from_phase: int
     to_phase: int
     resume: bool
+    workflow_max_listings: int | None = None
+    workflow_max_images: int | None = None
+    workflow_singles_only: bool = False
 
 
 def _count(session: Session, model: Any) -> int:
@@ -96,6 +100,13 @@ def run_resumable_pipeline(
 ) -> dict[str, Any]:
     if cfg.from_phase < 1 or cfg.to_phase > 6 or cfg.from_phase > cfg.to_phase:
         raise ValueError("Phase range must satisfy 1 <= from_phase <= to_phase <= 6.")
+
+    settings = with_sample_overrides(
+        settings,
+        max_listings=cfg.workflow_max_listings,
+        max_images=cfg.workflow_max_images,
+        singles_only=cfg.workflow_singles_only if cfg.workflow_max_listings else None,
+    )
 
     phase_done = _phase_completion_snapshot(
         session,
