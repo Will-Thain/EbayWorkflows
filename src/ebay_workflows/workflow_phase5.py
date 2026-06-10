@@ -442,6 +442,27 @@ def run_phase5_ocr_verification(
                 cards.append(card)
             return cards
 
+        def _scryfall_card_snapshots_for_listing(listing_id: Any) -> list[dict[str, Any]]:
+            """Detached card rows safe to pass into ThreadPoolExecutor workers."""
+            snapshots: list[dict[str, Any]] = []
+            for card in _scryfall_cards_for_listing(listing_id):
+                payload = dict(card.raw_payload_json or {})
+                snapshots.append(
+                    {
+                        "id": card.id,
+                        "name": card.name,
+                        "set_code": card.set_code,
+                        "collector_number": card.collector_number,
+                        "oracle_id": card.oracle_id,
+                        "lang": card.lang,
+                        "layout": payload.get("layout"),
+                        "image_normal": card.image_normal,
+                        "raw_payload_json": payload,
+                        "type_line": payload.get("type_line"),
+                    }
+                )
+            return snapshots
+
         def _run_parallel_real_ocr(images: list[ListingImage]) -> list[ImageAnalysisResult]:
             eligible = [img for img in images if img.local_path]
             if not eligible:
@@ -461,7 +482,7 @@ def run_phase5_ocr_verification(
                             crop_dir=crop_dir,
                             settings=settings,
                             use_embedding=embedding_enabled,
-                            scryfall_cards=_scryfall_cards_for_listing(img.listing_id),
+                            scryfall_cards=_scryfall_card_snapshots_for_listing(img.listing_id),
                             listing_title=listing.title if listing else None,
                         )
                     ] = img
