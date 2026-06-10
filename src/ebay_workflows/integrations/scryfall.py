@@ -9,7 +9,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from ..config import Settings
 from ..exceptions import RateLimitError, TransientIntegrationError
-from ..services.rate_limit import wait_global_http
+from ..operations.rate_limit import wait_global_http
 from .http_errors import raise_for_http_response
 
 SCRYFALL_PROVIDER = "Scryfall"

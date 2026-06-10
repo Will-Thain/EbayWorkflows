@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ebay_workflows.config import Settings
-from ebay_workflows.services.listing_condition import (
+from ebay_workflows.scoring.listing_condition import (
     adjust_price_for_listing_condition,
     parse_listing_condition,
 )

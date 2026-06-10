@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 from ..config import Settings
 from ..db import build_session_factory
-from ..services.match_stats import collect_match_stats
+from ..operations.match_stats import collect_match_stats
 from .dashboard_tab import DashboardTab
 from .job_runner import JobRunner
 from .poll_errors import GuiPollErrorReporter, handle_poll_error
@@ -41,12 +41,12 @@ from .workflow_monitor import (
     fetch_running_workflows,
     resolve_progress,
 )
-from ..services.ranked_export import RankedListingRow, fetch_ranked_listings
+from ..operations.ranked_export import RankedListingRow, fetch_ranked_listings
 from . import favorites as fav
 from .db_browser import CURATED_QUERIES, run_curated_query
 from .listing_detail import fetch_listing_detail
 from .match_widgets import ListingDetailPanel
-from .models_qt import GenericTableModel, RankedListTableModel
+from ..models_qt import GenericTableModel, RankedListTableModel
 from .theme import apply_tab_layout, configure_data_table
 
 

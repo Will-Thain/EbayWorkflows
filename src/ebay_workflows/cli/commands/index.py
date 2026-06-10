@@ -6,14 +6,14 @@ from rich.table import Table
 from ebay_workflows.cli.bootstrap import app, console
 from ebay_workflows.cli_context import cli_session, load_settings
 
-from ebay_workflows.services.embedding_index import (
+from ebay_workflows.recognition.embedding_index import (
     append_faiss_batch,
     build_faiss_index,
     build_faiss_index_all_batches,
     count_indexable_art_cards,
     indexed_scryfall_ids,
 )
-from ebay_workflows.services.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
+from ebay_workflows.recognition.set_symbol_match import build_set_symbol_templates, set_symbol_template_dir
 
 @app.command("build-set-symbol-templates")
 def build_set_symbol_templates_cmd() -> None:

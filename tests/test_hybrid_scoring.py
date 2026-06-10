@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ebay_workflows.services.hybrid_scoring import (
+from ebay_workflows.scoring.hybrid_scoring import (
     composite_hybrid_confidence,
     compute_listing_score_hybrid,
     hybrid_confidence_components,

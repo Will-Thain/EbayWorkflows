@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ebay_workflows.gui import favorites as fav
 from ebay_workflows.models import Base, Listing, ListingScore
-from ebay_workflows.services.ranked_export import fetch_ranked_listings
+from ebay_workflows.operations.ranked_export import fetch_ranked_listings
 
 
 def _session() -> Session:

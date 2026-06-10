@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ebay_workflows.services.match_event_log import log_positive_match
+from ebay_workflows.operations.match_event_log import log_positive_match
 
 
 def test_log_positive_match_appends_jsonl(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ebay_workflows.services.detached_jobs import detached_job_log_path
+from ebay_workflows.operations.detached_jobs import detached_job_log_path
 
 
 def test_detached_job_log_path() -> None:

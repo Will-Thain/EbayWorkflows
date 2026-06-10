@@ -11,11 +11,11 @@ from ebay_workflows.config import Settings
 from ebay_workflows.exceptions import AuthenticationError, ConfigurationError
 
 from ebay_workflows.models import Base
-from ebay_workflows.services.db_indexes import ensure_performance_indexes
+from ebay_workflows.operations.db_indexes import ensure_performance_indexes
 from ebay_workflows.integrations.ebay import verify_ebay_credentials
-from ebay_workflows.services.health_checks import collect_operational_health
-from ebay_workflows.services.embedding_index import index_exists
-from ebay_workflows.services.ingest_helpers import max_listings_per_query
+from ebay_workflows.operations.health_checks import collect_operational_health
+from ebay_workflows.recognition.embedding_index import index_exists
+from ebay_workflows.operations.ingest_helpers import max_listings_per_query
 
 @app.command("validate-env")
 def validate_env() -> None:

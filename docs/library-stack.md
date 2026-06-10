@@ -2,73 +2,82 @@
 
 ## Decision Summary
 
-Production matching is a **hybrid propose-then-confirm** pipeline. Recognition library detail: **[mtg-card-recognition `docs/architecture.md`](../mtg-card-recognition/docs/architecture.md)** and [`docs/library-stack.md`](../mtg-card-recognition/docs/library-stack.md).
+Production matching is a **hybrid propose-then-confirm** pipeline.
 
-- **Propose [Shipped]:** Phase 2 title match; optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`)
-- **Confirm [Shipped]:** `mtg_card_recognition.evidence` — zone OCR + set/collector + symbol per **printing**
+- **Library detail:** [`mtg-card-recognition/docs/architecture.md`](../mtg-card-recognition/docs/architecture.md), [`integration/ebay-workflows.md`](../mtg-card-recognition/docs/integration/ebay-workflows.md)
+- **Consumer wiring:** `card-recognition-architecture.md`, `architecture.md`
 
-Core dependencies:
+```mermaid
+flowchart LR
+  subgraph propose ["Propose — EbayWorkflows"]
+    P2[Phase 2 title match]
+    FAISS[FAISS top-1 insert optional]
+  end
+  subgraph confirm ["Confirm — split"]
+    LIB[mtg-card-recognition Tier 8 gate]
+    ROW[EbayWorkflows candidates/ row policy]
+  end
+  P2 --> ROW
+  FAISS --> ROW
+  LIB --> ROW
+```
 
-- `OpenCV` for preprocessing, card region detection, alignment, and zone crops
-- `OpenCLIP` for image embeddings and coarse candidate retrieval (catalog: ~110k art-zone vectors)
-- `FAISS` for fast nearest-neighbor search (`IndexFlatIP`)
-- `Tesseract` (baseline) / `PaddleOCR` (planned primary) for zone text extraction
-- `RapidFuzz` for deterministic name reconciliation and disambiguation
+- **Propose [Shipped]:** Phase 2 title match (`recognition/title_match`); optional FAISS top-1 insert (`FAISS_PROPOSE_CANDIDATES`)
+- **Confirm [Shipped]:** Library **Tier 8 cascade gate** on proposals; EbayWorkflows **`candidates/`** (`candidate_gate`, `candidate_selection`) on persisted rows — zone OCR + set/collector + symbol per **printing**
 
-## Why Hybrid Beats Vision-Only
+**Historical [Historical]:** single package `mtg_card_recognition.evidence` owned both cascade and row policy — removed in library v0.3.2.
 
-MTG cards are near-duplicate visuals across printings. Vision-only matching confuses:
+## Core dependencies
 
-- different sets with similar art
-- foil/lighting/angle distortions on eBay photos
-- language/version variants
+- `OpenCV` — preprocessing, regions, alignment, zone crops (library)
+- `OpenCLIP` + `FAISS` — art-zone embeddings (~110k vectors full build)
+- `Tesseract` — zone OCR **[Shipped]**; `PaddleOCR` **[Future]**
+- `RapidFuzz` — title reconciliation (EbayWorkflows Phase 2)
 
-Zone fields (title, set code, collector number, symbol, mana) disambiguate what embeddings cannot prove alone. External scanners (CollectorVision, scryglass, mtg-vision) focus on **proposal**; none implement our multi-zone **confirmation gate**.
+## Implementation pattern (current)
 
-## Implementation Pattern (current)
+1. Detect regions, align, extract zones (`mtg_card_recognition` pipeline)
+2. Run cascade Tiers 0–8; Tier 8 sets proposal `gate_status`
+3. `cascade_regions_from_analysis` projects signals for persistence
+4. `candidate_sync` merges proposals + `zone_evidence` onto ORM rows
+5. `candidates_for_region_evidence` prevents reprint OCR bleed
+6. `apply_per_listing_verification_gates` sets ≤1 `image_verified` per listing
+7. Phase 3 prices `pricing_eligible` candidates; Phase 4 hybrid rank
 
-1. detect card regions and normalize crops with OpenCV (`mtg_card_recognition.zones`)
-2. align card, detect frame layout, extract zone strips (`mtg_card_recognition.zones`)
-3. OCR name/bottom/type-line; match set symbol; detect mana pips (supporting only)
-4. embed art-zone crop with OpenCLIP; query FAISS for top-K; optional `faiss_proposal` candidate
-5. attach `zone_evidence` with provenance; `candidates_for_region_evidence` prevents reprint OCR bleed
-6. `apply_per_listing_verification_gates` sets at most one `image_verified` printing per listing
-7. hybrid rank uses `select_pricing_candidate` for singles EV
+Only `recognition/` and `adapters/` import the library — see `adr/0002-package-restructure.md`.
 
-## Recommended Defaults
+## Library version pin **[Shipped]**
 
-- **Image preprocessing:** `opencv-python`
-- **OCR:** `pytesseract` **[Shipped]** via `mtg_card_recognition.ocr`; `paddleocr` primary **[Future]**
-- **Embeddings:** `open-clip-torch` with `ViT-B-32` + `force_quick_gelu=True`
-- **Vector index:** `faiss-cpu` (full corpus ~110k with `build-faiss-full.ps1`)
-- **Fuzzy text matching:** `rapidfuzz`
-- **Bulk lot detection (Phase 6):** OpenCV multi-card; optional `ultralytics` YOLO later
+Production installs pin the sibling library in `pyproject.toml`:
 
-## External reference implementations
+```text
+mtg-card-recognition @ git+https://github.com/Will-Thain/mtg-card-recognition.git@8ada82b
+```
 
-Not dependencies today — design references only:
+Local development: `scripts/install-dev.ps1` (editable clone of `../mtg-card-recognition`). After bumping the pin, re-run `pytest -q` and Phase 5 sample smoke (`scripts/run_sample_iterations.py`).
 
-| Project | Takeaway for us |
-|---------|-----------------|
-| [CollectorVision / Milo](https://github.com/HanClinto/CollectorVision) | MTG-specific 128-d embed + ~53 MB HF catalog; use as proposer on aligned crops; AGPL |
-| [scryglass](https://github.com/KJBurnett/scryglass) | Art + full dual fingerprint; DINO patches; validates our art-zone rects |
-| [mtg-vision](https://github.com/nmichlo/mtg-vision) | Synthetic detection training; Qdrant + ConvNeXt pattern |
-| [object-detection (techishthoughts)](https://github.com/techishthoughts-org/object-detection) | YOLO zone classes + OCR + DINO art for printing |
-| [mtg_scanner](https://github.com/wmjg-alt/mtg_scanner) | YOLO + OCR + Scryfall; tracking for live scan |
+## Recommended defaults
 
-Evaluation path without rebuilding Scryfall caches: download Milo NPZ, query existing `crops/zones/aligned/` — see `card-recognition-architecture.md` § Rebuild matrix.
+- **Preprocessing:** `opencv-python`
+- **OCR:** `pytesseract` via library; `paddleocr` **[Future]**
+- **Embeddings:** `open-clip-torch` `ViT-B-32` + `force_quick_gelu=True`
+- **Vector index:** `faiss-cpu`; full corpus via `build-faiss-full.ps1`
+- **Fuzzy text:** `rapidfuzz` (consumer Phase 2)
+- **Phase 6 bulk:** OpenCV multi-card + per-crop `run_region_from_image`
 
-## Operational Guidance
+## External references
 
-- version embedder model and `index_crop_mode` in FAISS meta JSON
-- run `validate-env` after index or zone config changes
-- keep a labeled validation set for OCR-only vs embedding-only vs hybrid regression
-- prefer deterministic zone confirmation over opaque score drift
+Design references only — see table in prior version; evaluation via Milo NPZ on existing zone crops (`card-recognition-architecture.md` rebuild matrix).
 
-## Desktop GUI (operator application)
+## Operational guidance
 
-- **UI framework:** `PySide6` (Qt 6) — native window, `QTableView`, `QProcess`, `QTimer`
-- **Default style:** Qt **Fusion**; optional dark palette via `qdarktheme` or custom `QPalette`
-- **Not used for GUI:** Tkinter, Streamlit, Electron (see `gui-application.md`)
-- **Scheduling (in-app):** `apscheduler` (GUI-6); headless: `ebay-workflows run-due-schedules` + Windows Task Scheduler
-- **Packaging:** PyInstaller with PySide6 Qt libraries bundled
+- Version embedder + `index_crop_mode` in FAISS meta JSON
+- Run `validate-env` after index or recognition config changes
+- Labeled crops: `mtg-card-recognition/tests/fixtures/labeled_crops/`
+- Prefer deterministic zone confirmation over opaque score drift
+
+## Desktop GUI
+
+- **UI:** PySide6 — subprocess CLI only; no torch/OCR in GUI process
+- **Scheduling:** in-app `apscheduler`; headless `run-due-schedules`
+- See `gui-application.md`

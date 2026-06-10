@@ -13,7 +13,22 @@ A **local desktop application** (native window, no browser) that lets one operat
 5. **Schedule** workflows to run on an interval (e.g. every 24h), daily at a time, or once on a specific date/time.
 6. **Favourite** listings for later review and filtering.
 
-The GUI orchestrates and visualizes work; **business logic stays in** `ebay_workflows` (CLI + existing services). Long-running CV phases (5–6) run out-of-process so the UI stays responsive.
+The GUI orchestrates and visualizes work; **business logic stays in** CLI + workflow packages (`workflows/`, `candidates/`, `scoring/`, `operations/`). Long-running CV phases (5–6) run out-of-process so the UI stays responsive.
+
+### Architecture boundary **[Shipped]**
+
+```mermaid
+flowchart LR
+  GUI[gui/ PySide6] -->|QProcess| CLI[ebay-workflows CLI]
+  CLI --> WF[workflows/ phases]
+  WF --> REC[recognition/]
+  REC --> LIB[mtg-card-recognition]
+  GUI -.->|read-only| DB[(Postgres DTOs)]
+```
+
+- **GUI must not** `import mtg_card_recognition`, torch, OpenCLIP, or OCR backends.
+- Match detail reads `evidence_json` only — display `gate_status`, `image_verification_source`, provenance fields per `card-recognition-architecture.md`.
+- Workflow argv built from shared catalog (`workflow_catalog.py` → **`workflows/catalog.py`** per ADR 0002).
 
 ## Platform choice: PySide6 (Qt 6)
 
@@ -347,7 +362,7 @@ Double-click a row → open **Opportunities** tab filtered to that `listing_id` 
 
 ---
 
-## Shared services (backend for GUI)
+## Shared backend modules (GUI reuse)
 
 ```text
 src/ebay_workflows/gui/
@@ -367,10 +382,10 @@ Reuse existing:
 
 - `config.Settings`
 - `db.build_session_factory`
-- `services.ranked_export.fetch_ranked_listings`
+- `operations.ranked_export.fetch_ranked_listings`
 - `models.*`
 
-Do **not** import `workflow_phase5`, `open_clip`, or `torch` from GUI modules.
+Do **not** import `workflows.phase5`, `open_clip`, or `torch` from GUI modules.
 
 ---
 

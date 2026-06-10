@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from ebay_workflows.models import Base, WorkflowRun, WorkflowStep
-from ebay_workflows.services.stale_workflows import (
+from ebay_workflows.operations.stale_workflows import (
     classify_step_lifecycle,
     clear_stale_workflow_steps,
     list_running_workflow_views,

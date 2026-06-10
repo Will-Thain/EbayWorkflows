@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from ebay_workflows.models import Base, Listing, ListingCardCandidate, ListingScore, ScryfallCard
-from ebay_workflows.services.ranked_export import fetch_ranked_listings, write_ranked_json
+from ebay_workflows.operations.ranked_export import fetch_ranked_listings, write_ranked_json
 
 
 def _build_session() -> Session:
@@ -96,7 +96,7 @@ def test_fetch_ranked_listings_orders_by_rank_value() -> None:
 
 
 def test_write_ranked_json(tmp_path) -> None:
-    from ebay_workflows.services.ranked_export import RankedListingRow
+    from ebay_workflows.operations.ranked_export import RankedListingRow
 
     rows = [
         RankedListingRow(

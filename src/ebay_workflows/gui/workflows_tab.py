@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import Settings
-from ..services.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
+from ..operations.progress_report import ProgressSnapshot, format_progress_label, parse_progress_line
 from .job_runner import JobRunner
 from .job_logs_panel import JobLogsPanel
 from .poll_errors import GuiPollErrorReporter, handle_poll_error
@@ -187,10 +187,15 @@ class WorkflowsTab(QWidget):
             return {"top_k": 3}
         if job_id == "phase4":
             return {"hybrid": True}
+        if job_id == "pipeline":
+            return {
+                "query": self._query_edit.text().strip() or "magic the gathering",
+                "max_pages": self._max_pages.value(),
+            }
         return {}
 
     def _start_job(self, job_id: str) -> None:
-        if job_id in ("phase5", "phase6") and self._confirm_long_job(job_id) is False:
+        if job_id in ("phase5", "phase6", "pipeline") and self._confirm_long_job(job_id) is False:
             return
         try:
             self._runner.start(job_id, self._job_params(job_id))

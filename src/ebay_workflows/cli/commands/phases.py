@@ -6,15 +6,15 @@ from rich.table import Table
 from ebay_workflows.cli.bootstrap import app, console
 from ebay_workflows.cli_context import cli_session, load_settings
 
-from ebay_workflows.services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
-from ebay_workflows.services.ingest_helpers import resolve_max_pages
-from ebay_workflows.services.workflow_sample import with_sample_overrides
+from ebay_workflows.operations.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
+from ebay_workflows.operations.ingest_helpers import resolve_max_pages
+from ebay_workflows.operations.workflow_sample import with_sample_overrides
 from ebay_workflows.pipeline_resume import ResumablePipelineConfig, run_resumable_pipeline
-from ebay_workflows.workflow_phase2 import load_cards_from_cache, run_phase2_title_match
-from ebay_workflows.workflow_phase3 import run_phase3_join
-from ebay_workflows.workflow_phase4 import run_phase4_ranking
-from ebay_workflows.workflow_phase5 import run_phase5_ocr_verification
-from ebay_workflows.workflow_phase6 import run_phase6_bulk_lot_detection
+from ebay_workflows.workflows.phase2 import load_cards_from_cache, run_phase2_title_match
+from ebay_workflows.workflows.phase3 import run_phase3_join
+from ebay_workflows.workflows.phase4 import run_phase4_ranking
+from ebay_workflows.workflows.phase5 import run_phase5_ocr_verification
+from ebay_workflows.workflows.phase6 import run_phase6_bulk_lot_detection
 
 @app.command("phase2-match-title")
 def phase2_match_title(

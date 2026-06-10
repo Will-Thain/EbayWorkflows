@@ -13,8 +13,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from ebay_workflows.cli_context import cli_session, load_settings  # noqa: E402
 from ebay_workflows.hardening import run_data_integrity_checks  # noqa: E402
-from ebay_workflows.services.ranked_export import fetch_ranked_listings, write_ranked_json  # noqa: E402
-from ebay_workflows.workflow_phase4 import run_phase4_ranking  # noqa: E402
+from ebay_workflows.operations.ranked_export import fetch_ranked_listings, write_ranked_json  # noqa: E402
+from ebay_workflows.workflows.phase4 import run_phase4_ranking  # noqa: E402
 
 
 def main() -> int:

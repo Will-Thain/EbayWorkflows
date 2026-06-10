@@ -15,8 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import Settings
-from ..services.workflow_logs import list_workflow_log_files
-from .models_qt import GenericTableModel
+from ..operations.workflow_logs import list_workflow_log_files
+from ..models_qt import GenericTableModel
 from .theme import configure_data_table
 from .widgets import HintLabel, SectionTitle
 

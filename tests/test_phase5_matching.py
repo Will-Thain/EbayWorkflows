@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ebay_workflows.services.image_evidence import candidate_has_image_evidence
-from ebay_workflows.workflow_phase5 import _apply_region_evidence_to_candidates
+from ebay_workflows.candidates.image_evidence import candidate_has_image_evidence
+from ebay_workflows.workflows.phase5 import _apply_region_evidence_to_candidates
 
 
 def test_reprint_ocr_does_not_bleed_across_candidates() -> None:

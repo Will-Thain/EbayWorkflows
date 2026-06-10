@@ -13,7 +13,7 @@
 
 - **unit tests** — parsing, scoring formulas, confidence composition, currency conversion
 - **recognition library tests** — cascade tiers, zone layouts, identifiers (serialization only in `evidence.serialize`)
-- **workflow integration tests** — `ebay_workflows.services.candidate_gate`, `cascade_persist`, Phase 5 matching
+- **workflow integration tests** — `ebay_workflows.candidates`, `cascade_persist`, Phase 5 matching
 - **integration tests** — each connector with recorded fixtures
 - **repository/migration tests** — DB schema integrity, `ensure-db-indexes`
 - **workflow orchestration tests** — checkpoint/resume, pipeline lock, Phase 6 idempotency
@@ -33,8 +33,11 @@ Critical regressions to catch in CI when touching Phase 5, guardrails, or `mtg_c
 
 | Area | Test modules |
 |------|----------------|
-| Strict gate (OCR/FAISS/mana alone fail) | `test_image_evidence.py`, `test_phase5_matching.py` |
-| Per-listing single winner | `test_phase5_matching.py`, `test_region_attach.py` |
+| Cascade persist views | `test_cascade_persist.py` |
+| Tier 7 funnel metrics | `test_tier7_metrics.py`, Phase 5 `metrics_json` |
+| Import boundary (recognition + adapters only) | `test_import_boundaries.py` **[Shipped]** |
+| Library Tier 8 + consumer row policy | `test_evidence_gate.py`, `candidates/image_evidence` facade |
+| Per-listing single winner | `test_phase5_matching.py` |
 | FAISS proposal (non-verifying insert) | `test_faiss_propose.py` |
 | Pricing guardrails (`set_collector` / `set_symbol` only) | `test_ev_guardrails.py`, `test_hybrid_scoring.py` |
 | Export provenance columns | `test_ranked_export.py` |
@@ -57,11 +60,14 @@ Assert that `image_verification_source` is only `set_collector` or `set_symbol` 
 
 ## Matching and CV Tests
 
-- Recognition unit tests run in **mtg-card-recognition** (`pytest` in sibling clone)
-- eBay integration: Phase 5/6 workflow tests, FAISS Postgres adapter (`test_faiss_batch.py`, `test_faiss_propose.py`)
-- OpenCLIP + FAISS retrieval sanity (`test_embedding_index.py`, `test_faiss_batch.py`)
-- hybrid scorer vs OCR-only and embedding-only baselines (`test_hybrid_scoring.py`)
-- Scryfall layout → zone selection (`test_layout_scryfall.py`)
+- Recognition unit tests: **mtg-card-recognition** (`pytest` in sibling clone)
+- Consumer integration:
+  - `tests/test_evidence_gate.py` — row policy (`candidates/`)
+  - `tests/test_cascade_persist.py` — `cascade_regions_from_analysis`
+  - `tests/test_phase5_matching.py`, `test_faiss_propose.py`
+  - `tests/test_import_boundaries.py` — only `recognition/` + `adapters/` import library **[Shipped]**
+- OpenCLIP + FAISS: `test_embedding_index.py`, `test_faiss_batch.py`
+- Hybrid scorer: `test_hybrid_scoring.py`
 
 ## Iterative smoke tiers **[Shipped]**
 

@@ -24,20 +24,21 @@ def _settings(**overrides: str) -> Settings:
         return Settings()
 
 
-def test_lot_crop_alias_on_settings() -> None:
+def test_lot_crop_confidence_stays_on_app_settings() -> None:
     settings = _settings(LOT_CROP_MIN_COMBINED_CONFIDENCE="0.51")
     recognition = recognition_settings_from_app(settings)
 
     assert settings.phase6_min_crop_match_confidence == 0.51
-    assert recognition.lot_crop_min_combined_confidence == 0.51
+    assert recognition.image_cache_dir == settings.image_cache_dir
 
 
-def test_faiss_build_fields_map_to_recognition() -> None:
+def test_faiss_build_fields_stay_on_app_settings() -> None:
     settings = _settings(
         FAISS_BUILD_MAX_CARDS="7500",
         FAISS_BUILD_ALL_CARDS="true",
     )
     recognition = recognition_settings_from_app(settings)
 
-    assert recognition.faiss_build_max_cards == 7500
-    assert recognition.faiss_build_all_cards is True
+    assert settings.faiss_build_max_cards == 7500
+    assert settings.faiss_build_all_cards is True
+    assert recognition.faiss_index_path == settings.faiss_index_path

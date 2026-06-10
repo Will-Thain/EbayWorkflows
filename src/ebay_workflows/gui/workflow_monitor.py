@@ -9,8 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Listing, ListingFavorite, ListingImage, ListingScore, WorkflowRun, WorkflowStep
-from ..services.progress_report import ProgressSnapshot
-from ..services.workflow_progress import progress_from_step_metrics
+from ..operations.progress_report import ProgressSnapshot
+from ..operations.workflow_progress import progress_from_step_metrics
 from ..workflow_steps import job_id_for_step
 from .progress_estimates import poll_job_progress
 

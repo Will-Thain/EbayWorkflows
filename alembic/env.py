@@ -14,7 +14,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ebay_workflows.config import Settings  # noqa: E402
-from ebay_workflows.models import Base  # noqa: E402
+from ebay_workflows.persistence.models import Base  # noqa: E402
 
 config = context.config
 

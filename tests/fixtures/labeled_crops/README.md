@@ -10,4 +10,4 @@ Curate from production:
 .\.venv\Scripts\python.exe scripts\curate_labeled_crops.py
 ```
 
-Output is written to the sibling `mtg-card-recognition` clone. See `docs/adr/0003-eval-brief.md` in that repo (or the stub pointer in `docs/card-recognition-architecture.md`).
+Output is written to the sibling `mtg-card-recognition` clone. See `docs/card-recognition-architecture.md` and `docs/adr/0002-package-restructure.md` for consumer/library boundaries.

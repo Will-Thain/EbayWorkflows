@@ -93,17 +93,44 @@ Attach market pricing suitable for EV calculations.
 
 ## CV/OCR/Matching Components (Phases 5–6) **[Shipped]**
 
-Architecture (zones, strict verification gate, artifacts, package layout): **`card-recognition-architecture.md`**.
+Architecture: **`card-recognition-architecture.md`**, [`mtg-card-recognition/docs/integration/ebay-workflows.md`](../mtg-card-recognition/docs/integration/ebay-workflows.md).
 
-Recognition logic lives in the **`mtg-card-recognition`** sibling repo (import `mtg_card_recognition`). eBay wiring uses thin shims under `src/ebay_workflows/services/` and `adapters/recognition_settings.py`. Local dev: `scripts/install-dev.ps1`.
+```mermaid
+flowchart TB
+  subgraph lib ["mtg-card-recognition v0.3.2+"]
+    ALZ[analyze_listing_image]
+    T8[Tier 8 cascade gate]
+    SER[evidence/serialize]
+  end
+  subgraph ebay ["EbayWorkflows"]
+    REC[recognition/]
+    CAND[candidates/ row policy]
+    ADP[adapters/recognition_settings]
+  end
+  REC --> ALZ --> T8 --> SER
+  SER --> CAND
+  ADP --> REC
+```
 
-### Verification policy **[Shipped]**
+- **Image cascade:** `mtg-card-recognition` — only imported from `recognition/` + `adapters/`
+- **Row policy:** `candidates/` — `candidate_sync`, `candidate_gate`, `candidate_selection`, `image_evidence` facade
+- **Persistence views:** `recognition/cascade_persist.cascade_regions_from_analysis`
+- Local dev: `scripts/install-dev.ps1` (editable sibling)
 
-- **Hard verify:** bottom strip set + collector match **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** set symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`).
-- **Strong symbol verify:** set symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees.
-- OCR, FAISS, and mana **never alone** set `image_verified`.
-- At most **one verified printing per listing** for pricing/EV (`apply_per_listing_verification_gates`).
-- Provenance on attach: `verification_listing_image_id`, `verification_detection_id`, `verification_region_path`.
+**Historical [Historical]:** `pipeline/ebay_compat.RegionAnalysis`; in-library `mtg_card_recognition.evidence` gate/attach — removed in library v0.3.2.
+
+### Verification policy **[Shipped]** (two layers)
+
+| Layer | Owner |
+|-------|--------|
+| Proposal `gate_status` | Library Tier 8 cascade gate |
+| `image_verified` / `pricing_eligible` on DB rows | EbayWorkflows `candidates/` |
+
+- **Hard verify:** bottom set + collector **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`)
+- **Strong symbol verify:** symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees
+- OCR, FAISS, mana **never alone** set `image_verified`
+- At most **one verified printing per listing** (`apply_per_listing_verification_gates` in `candidate_selection`)
+- Provenance: `verification_listing_image_id`, `verification_detection_id`, `verification_region_path`
 
 Optional **`FAISS_PROPOSE_CANDIDATES=true`** inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches; strict gate still required for pricing.
 

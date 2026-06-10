@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ebay_workflows.services.ingest_helpers import (
+from ebay_workflows.operations.ingest_helpers import (
     EBAY_BROWSE_MAX_OFFSET,
     max_listings_per_query,
     resolve_max_pages,

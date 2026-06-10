@@ -20,7 +20,7 @@ from ebay_workflows.models import (
     OcrResult,
     ScryfallCard,
 )
-from ebay_workflows.workflow_phase6 import run_phase6_bulk_lot_detection
+from ebay_workflows.workflows.phase6 import run_phase6_bulk_lot_detection
 
 
 def _build_session() -> Session:

@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from ebay_workflows.models import Base, Listing, ListingCardCandidate, ListingScore
-from ebay_workflows.services.match_stats import collect_match_stats
+from ebay_workflows.operations.match_stats import collect_match_stats
 
 
 @pytest.fixture()

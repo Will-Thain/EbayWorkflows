@@ -11,7 +11,7 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..exceptions import RateLimitError, TransientIntegrationError
-from ..services.rate_limit import wait_global_http
+from ..operations.rate_limit import wait_global_http
 from .http_errors import raise_for_http_response
 
 CARDMARKET_PROVIDER = "Cardmarket"

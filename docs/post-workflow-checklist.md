@@ -132,6 +132,18 @@ src/ebay_workflows/config.py  # Pydantic Settings; load YAML then env overrides
 
 ---
 
+## 10. Post-restructure smoke (after ADR 0002 / doc changes)
+
+Run before marking a doc or layout PR complete:
+
+- [ ] `ruff check .`
+- [ ] `pytest -q` (includes `test_import_boundaries`, `test_repositories`)
+- [ ] Optional: `scripts/run_sample_iterations.py --count 5 --max-images 2`
+- [ ] Grep docs for stale layout: `rg "services/|workflow_phase" docs/` — hits should be **[Historical]** or audit records only
+- [ ] Update `documentation-status.md` if new docs added (`trust-invariants.md`, `contributing-docs.md`, …)
+
+---
+
 ## 7. Documentation updates (after config restructure)
 
 - [ ] **`config-contract.md`** — split into “Environment (secrets & deploy)” vs “Config profiles (YAML)”; table per file

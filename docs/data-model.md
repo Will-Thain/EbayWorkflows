@@ -1,6 +1,6 @@
 # Data Model (PostgreSQL)
 
-**Status:** Schema **[Shipped]**; Alembic migrations **[Future]** (use `ensure-db-indexes` interim). Verification fields in `evidence_json` match `data-dictionary.md`. Tags: `documentation-status.md`.
+**Status:** Schema **[Shipped]**; Alembic baseline migrations **[Shipped]** (`alembic/versions/0001`, `0002`). Use `ensure-db-indexes` for performance indexes. Verification fields in `evidence_json` match `data-dictionary.md`. Tags: `documentation-status.md`.
 
 This schema is optimized for workflow traceability, deterministic reruns, and scalable listing enrichment.
 
@@ -91,7 +91,7 @@ Unique key:
 
 ### `evidence_json` — verification (Phase 5) **[Shipped]**
 
-Written by `mtg_card_recognition.evidence` attach logic. Key fields:
+Written by **EbayWorkflows `candidates/`** attach and gate logic (library provides cascade `gate_status` on proposals via sync). Key fields:
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -201,6 +201,16 @@ Single-operator local use: one favourite row per listing. Used by the desktop ap
 
 Indexes:
 - btree (`enabled`, `next_run_at`) for due-job queries
+
+## Migrations (Alembic) **[Shipped]**
+
+- **ORM definitions:** `ebay_workflows/models.py` (canonical table/column definitions)
+- **Alembic import:** `ebay_workflows.persistence.models` re-exports `Base` and all models for `alembic/env.py`
+- Config: `alembic/env.py` imports `Base` from `ebay_workflows.persistence.models`
+- Baseline: `0001_baseline_create_all_parity.py` — full schema parity with `init-db`
+- Incremental: `0002_listings_description_text.py` — example column add
+- Workflow: after model changes, `alembic revision --autogenerate` → review → `alembic upgrade head`
+- Repositories: `persistence/repositories/` — thin query helpers (`CandidateRepository`, `ListingRepository`); expand incrementally per phase
 
 ## Data Retention and Lifecycle
 

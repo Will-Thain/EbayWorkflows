@@ -13,13 +13,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import Settings
-from ..services.stale_workflows import (
+from ..operations.stale_workflows import (
     clear_stale_workflow_steps,
     delete_workflow_steps,
     list_running_workflow_views,
 )
 from .job_runner import JobRunner
-from .models_qt import GenericTableModel
+from ..models_qt import GenericTableModel
 from .poll_errors import GuiPollErrorReporter, handle_poll_error
 from .theme import configure_data_table
 from .widgets import HintLabel

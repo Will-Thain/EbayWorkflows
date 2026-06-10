@@ -81,7 +81,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 **Best fix:** Convert listing cost to `BASE_CURRENCY` before EV math; configurable static rates (live FX API optional later).
 
 **Implemented:**
-- `services/currency.py` — `listing_total_cost_base()` used in hybrid scoring, Phase 4, and Phase 6.
+- `scoring/currency.py` — `listing_total_cost_base()` used in hybrid scoring, Phase 4, and Phase 6.
 - `FX_GBP_TO_EUR` in `.env` (default `1.17` when `BASE_CURRENCY=EUR`).
 
 **Future:** ECB/OpenExchangeRates daily rate job; condition-aware Cardmarket price columns.
@@ -113,7 +113,7 @@ PHASE1_REFRESH_AFTER_HOURS=24
 
 **Implemented [Shipped]:**
 - `crop_match_allowed_for_pricing()` — bulk lots price individual crops when crop-level evidence passes **strict rules** (primarily `set_collector` or verified set symbol).
-- `candidate_has_image_evidence()` / `mtg_card_recognition.evidence` — FAISS and mana **do not alone verify**.
+- `candidate_has_image_evidence()` / **`candidates/candidate_gate`** — FAISS and mana **do not alone verify**.
 - Phase 5 attach uses `candidates_for_region_evidence` + provenance fields.
 
 **Historical [Historical]:** “FAISS or set symbol alone verifies bulk crop” under OR gate.

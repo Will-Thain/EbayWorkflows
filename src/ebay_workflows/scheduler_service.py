@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .gui.workflow_catalog import WORKFLOW_JOBS
 from .models import ScheduledJob, WorkflowStep
-from .services.detached_jobs import spawn_cli_job_detached
+from .operations.detached_jobs import spawn_cli_job_detached
 
 
 def workflow_is_running(session: Session) -> bool:

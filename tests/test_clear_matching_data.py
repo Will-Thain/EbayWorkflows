@@ -15,7 +15,7 @@ from ebay_workflows.models import (
     OcrResult,
     ScryfallCard,
 )
-from ebay_workflows.services.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
+from ebay_workflows.operations.clear_matching_data import clear_matching_artifacts, count_matching_artifacts
 
 
 def _build_session() -> Session:

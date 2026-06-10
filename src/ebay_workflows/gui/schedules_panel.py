@@ -35,7 +35,7 @@ from ..scheduler_service import (
     try_dispatch_one_due,
 )
 from .job_runner import JobRunner
-from .models_qt import GenericTableModel
+from ..models_qt import GenericTableModel
 from .workflow_catalog import LONG_RUNNING_SCHEDULE_JOBS, WORKFLOW_JOBS
 
 

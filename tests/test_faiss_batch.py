@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from ebay_workflows.models import Base, ScryfallCard
-from ebay_workflows.services.embedding_index import _select_cards_for_batch
+from ebay_workflows.recognition.embedding_index import _select_cards_for_batch
 
 
 def _session() -> Session:

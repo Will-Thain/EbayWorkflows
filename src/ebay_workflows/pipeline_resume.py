@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .integrations.scryfall import sync_scryfall_bulk
 from .models import CardPrice, ImageDetection, Listing, ListingCardCandidate, ListingScore, OcrResult, ScryfallCard, WorkflowStep
-from .workflow_phase1 import run_phase1
-from .workflow_phase2 import run_phase2_title_match, upsert_scryfall_cards
-from .workflow_phase3 import run_phase3_join, sync_cardmarket_prices
-from .workflow_phase4 import run_phase4_ranking
-from .workflow_phase5 import run_phase5_ocr_verification
-from .workflow_phase6 import run_phase6_bulk_lot_detection
-from .services.workflow_sample import with_sample_overrides
+from .workflows.phase1 import run_phase1
+from .workflows.phase2 import run_phase2_title_match, upsert_scryfall_cards
+from .workflows.phase3 import run_phase3_join, sync_cardmarket_prices
+from .workflows.phase4 import run_phase4_ranking
+from .workflows.phase5 import run_phase5_ocr_verification
+from .workflows.phase6 import run_phase6_bulk_lot_detection
+from .operations.workflow_sample import with_sample_overrides
 
 
 @dataclass(slots=True)

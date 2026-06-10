@@ -7,10 +7,10 @@ from ebay_workflows.cli.bootstrap import app, console
 from ebay_workflows.cli_context import cli_session, load_settings
 
 from ebay_workflows.hardening import run_data_integrity_checks
-from ebay_workflows.services.match_stats import collect_match_stats
-from ebay_workflows.services.pipeline_progress import collect_pipeline_progress
-from ebay_workflows.services.stale_workflows import clear_stale_workflow_steps, list_running_workflow_views
-from ebay_workflows.services.ranked_export import fetch_ranked_listings, write_ranked_json
+from ebay_workflows.operations.match_stats import collect_match_stats
+from ebay_workflows.operations.pipeline_progress import collect_pipeline_progress
+from ebay_workflows.operations.stale_workflows import clear_stale_workflow_steps, list_running_workflow_views
+from ebay_workflows.operations.ranked_export import fetch_ranked_listings, write_ranked_json
 
 @app.command("export-rankings")
 def export_rankings(
@@ -205,7 +205,7 @@ def prune_image_cache(
     ),
 ) -> None:
     """Remove unreferenced listing image files from the cache root directory."""
-    from ebay_workflows.services.image_cache_prune import prune_unreferenced_listing_images
+    from ebay_workflows.operations.image_cache_prune import prune_unreferenced_listing_images
 
     settings = load_settings(action="prune image cache")
     with cli_session(action="prune image cache", settings=settings) as (_, session):

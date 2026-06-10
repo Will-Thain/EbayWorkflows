@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (updated 2026-06-08 for `mtg_card_recognition` extraction and strict verification gate)
+Accepted (updated **2026-06-10** for v0.3.2 consumer boundary — see ADR 0002)
 
 ## Context
 
@@ -10,39 +10,42 @@ The project requires a local-first workflow CLI with PostgreSQL persistence, ima
 
 ## Decision
 
-- use a local CLI architecture with phase-based workflow execution
-- use PostgreSQL for workflow and artifact persistence
-- extract card recognition into **`mtg_card_recognition`** (zones, OCR, embeddings, evidence gate); eBay app uses adapter + shims
-- use OpenCV for preprocessing and region operations **[Shipped]**
-- use OpenCLIP + FAISS for image candidate retrieval **[Shipped]**
-- use **Tesseract** (`pytesseract`) for zone OCR **[Shipped]**; PaddleOCR as optional future backend **[Future]**
-- use RapidFuzz for deterministic text-level disambiguation **[Shipped]**
-- use Cardmarket downloadable bulk pricing files instead of Cardmarket API access **[Shipped]**
-- strict verification gate: OCR/FAISS/mana never alone verify; provenance on attach **[Shipped]**
+- local CLI + optional PySide6 GUI with **QProcess** phase isolation (no in-process CV in GUI)
+- PostgreSQL for workflow and artifact persistence
+- **`mtg-card-recognition`** sibling repo — image cascade only (zones, OCR, embeddings, Tier 8 gate, serialize)
+- **EbayWorkflows** owns: ingest, ORM, candidate row policy (`candidates/`), scoring, phases
+- OpenCV, OpenCLIP, FAISS, Tesseract **[Shipped]**; PaddleOCR **[Future]**
+- RapidFuzz for Phase 2 title match **[Shipped]**
+- Cardmarket bulk files (no live API) **[Shipped]**
+- Strict verification: OCR/FAISS/mana never alone verify; provenance on attach **[Shipped]**
 
-## API Safety and Permission Constraints
+```mermaid
+flowchart LR
+  LIB[mtg-card-recognition] -->|ImageAnalysisResult| REC[recognition/]
+  REC --> CAND[candidates/]
+  CAND --> DB[(Postgres)]
+```
 
-- all provider calls go through shared rate-limit middleware
-- each provider has explicit max request budget configured in environment
-- only officially supported/authorized API endpoints are permitted
-- endpoint/scope policy checks run at startup and before live calls
-- permission violations fail fast and are treated as non-retryable
+## API safety
+
+- shared rate-limit middleware; explicit provider budgets
+- authorized endpoints only; fail fast on policy violations
 
 ## Consequences
 
-- hybrid matching improves robustness vs vision-only matching
-- extractable recognition library enables future standalone repo without duplicating gate logic
-- strict verify gate reduces false pricing bypass vs historical OR-gate
-- implementation complexity is higher but yields explainable confidence
+- hybrid matching vs vision-only
+- library SRP enables independent cascade evolution (v0.3.2 removed eBay shims from library)
+- row policy colocated with ORM in consumer
 
-## Revisit Triggers
+## Revisit triggers
 
 - provider policy changes
-- significant dataset scale increase requiring indexing changes (IVF/PQ, Milo catalog)
-- material drift in OCR or embedding retrieval quality — calibrate `VERIFY_*` on labeled crops
-- PaddleOCR adoption if Tesseract accuracy insufficient on eBay crops
+- FAISS scale (IVF/PQ, Milo catalog)
+- OCR accuracy on eBay crops
+- package migration completion (ADR 0002 M7)
 
 ## Related
 
-- `card-recognition-architecture.md` — shipped verification spec
-- `documentation-status.md` — Shipped / Historical / Future tags
+- `adr/0002-package-restructure.md`
+- `card-recognition-architecture.md`
+- `documentation-status.md`

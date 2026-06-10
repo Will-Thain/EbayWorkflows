@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ebay_workflows.services.progress_report import ProgressSnapshot
-from ebay_workflows.services.workflow_progress import progress_from_step_metrics, publish_step_progress
+from ebay_workflows.operations.progress_report import ProgressSnapshot
+from ebay_workflows.operations.workflow_progress import progress_from_step_metrics, publish_step_progress
 
 
 def test_publish_and_read_step_metrics() -> None:

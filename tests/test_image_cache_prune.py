@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ebay_workflows.services.image_cache_prune import prune_unreferenced_listing_images
+from ebay_workflows.operations.image_cache_prune import prune_unreferenced_listing_images
 
 
 def test_prune_removes_unreferenced_root_files(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ebay_workflows.services.embedding_index import EmbeddingMatch, apply_embedding_evidence
+from ebay_workflows.recognition.embedding_index import EmbeddingMatch, apply_embedding_evidence
 
 
 def test_apply_embedding_evidence_marks_agreement() -> None:

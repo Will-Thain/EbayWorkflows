@@ -4,16 +4,21 @@ This document defines the first six workflow phases and expected behavior.
 
 ## End-to-End Flow
 
-eBay Browse API
--> Search MTG listings
--> Store listing metadata + image URLs
--> Download/cache images
--> Detect card regions
--> OCR title/collector number/set code
--> Match to Scryfall data
--> Join to Cardmarket pricing
--> Calculate EV + confidence
--> Rank listings
+```mermaid
+flowchart TD
+  A[eBay Browse API] --> B[Phase 1 ingest + image cache]
+  B --> C[Phase 2 title match]
+  C --> D[Phase 5 image cascade]
+  D --> E{pricing_eligible?}
+  E -->|yes| F[Phase 3 Cardmarket join]
+  B --> G[Phase 6 bulk lot crops]
+  G --> F
+  F --> H[Phase 4 hybrid rank + export]
+  D --> LIB[mtg-card-recognition]
+  D --> CAND[EbayWorkflows candidates/]
+```
+
+Narrative: eBay listings → cache images → title candidates → **library cascade** + **consumer row policy** → price eligible candidates → rank.
 
 ## Phase 1: eBay Search + Image Download + Local DB
 
@@ -98,7 +103,7 @@ eBay Browse API
 
 - OCR text candidates (title, set code, collector number)
 - OpenCLIP + FAISS image candidates for each card crop
-- image-derived evidence that can override title-only assumptions
+- image-derived evidence merged via cascade sync (does not override title-only rows without strict verification)
 
 ### Acceptance Criteria
 
@@ -148,25 +153,34 @@ Use `./scripts/reanalyze-matching.ps1`, `./scripts/rerun-image-matching.ps1`, or
 
 ## Phase 5: Image Evidence Types
 
-See `card-recognition-architecture.md` for zone layout, artifact paths, and external library comparison.
+See `card-recognition-architecture.md` for zone layout, Phase 5 sequence diagram, and library contract.
+
+### Wiring **[Shipped]**
+
+1. `recognition/catalog_index` — Phase 2 ORM rows → `CatalogIndex`
+2. `recognition/phase5_analysis` — `analyze_listing_image`
+3. `recognition/cascade_persist.cascade_regions_from_analysis` — no legacy `RegionAnalysis`
+4. `candidates/candidate_sync` + `candidate_attach` — merge proposals onto rows
+5. `candidates/candidate_selection.apply_per_listing_verification_gates`
 
 ### Verification gate **[Shipped]**
 
-Strict consensus rules (`mtg_card_recognition.evidence`):
+| Layer | Module |
+|-------|--------|
+| Tier 8 on proposals | mtg-card-recognition `cascade/gate.py` |
+| Row policy | EbayWorkflows `candidate_gate` + `candidate_selection` |
 
-- **Hard verify:** bottom strip **set + collector** match the printing **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** set symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`)
-- **Strong symbol verify:** set symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees
-- **Lot crops:** `match_method=set_collector` with parsed identifiers (Phase 6)
+- **Hard verify:** bottom **set + collector** **and** (name OCR ≥ `VERIFY_NAME_HARD_MIN` **or** symbol ≥ `VERIFY_SYMBOL_STRONG_MIN`)
+- **Strong symbol verify:** symbol + name ≥ `VERIFY_NAME_STRONG_MIN` + bottom set agrees
+- **Lot crops (Phase 6):** `set_collector` with parsed identifiers
 
-OCR, FAISS, and mana **alone never verify**. At most **one candidate per listing** is verified for pricing/EV (`apply_per_listing_verification_gates`). Region attach uses `candidates_for_region_evidence` so name-only OCR does not bleed across reprints.
+OCR, FAISS, and mana **alone never verify**. At most **one candidate per listing** verified for pricing/EV. Region attach uses `candidates_for_region_evidence`.
 
-Evidence records `verification_listing_image_id`, `verification_detection_id`, and `verification_region_path` on attach.
+Optional: `FAISS_PROPOSE_CANDIDATES=true` inserts `faiss_proposal` when FAISS top-1 ∉ Phase 2 matches.
 
-Optional: `FAISS_PROPOSE_CANDIDATES=true` **[Shipped]** inserts a `faiss_proposal` candidate when FAISS top-1 is absent from Phase 2 title matches (still subject to strict verify gate).
+**Historical [Historical]:** in-library `mtg_card_recognition.evidence`; OR-gate on any single signal.
 
-**Historical [Historical]:** OR gate verified on any single signal (OCR, FAISS, mana); ~101 verified listings in last pre-fix reanalyze.
-
-Full spec: `card-recognition-architecture.md`. Tags: `documentation-status.md`.
+Full spec: `card-recognition-architecture.md`.
 
 ### FAISS index
 

@@ -10,12 +10,12 @@ from sqlalchemy import select, cast, String
 from ebay_workflows.config import Settings
 from ebay_workflows.db import build_session_factory
 from ebay_workflows.models import ImageDetection, Listing, ListingCardCandidate, ListingImage, OcrResult
-from ebay_workflows.services.embedding_index import index_exists, propose_embedding_candidates, apply_embedding_evidence
-from ebay_workflows.services.image_analysis import analyze_listing_image
+from ebay_workflows.recognition.embedding_index import index_exists, propose_embedding_candidates, apply_embedding_evidence
+from ebay_workflows.recognition.phase5_analysis import analyze_listing_image
 from ebay_workflows.recognition.cascade_persist import cascade_regions_from_analysis
-from ebay_workflows.services.candidate_sync import apply_cascade_proposals_to_candidates
-from ebay_workflows.services.image_evidence import apply_per_listing_verification_gates
-from ebay_workflows.workflow_phase5 import (
+from ebay_workflows.candidates.candidate_sync import apply_cascade_proposals_to_candidates
+from ebay_workflows.candidates.image_evidence import apply_per_listing_verification_gates
+from ebay_workflows.workflows.phase5 import (
     RegionPersistResult,
     _apply_region_evidence_to_candidates,
     _clear_card_regions,

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ebay_workflows.services.currency import convert_to_base_currency, listing_total_cost_base
+from ebay_workflows.scoring.currency import convert_to_base_currency, listing_total_cost_base
 
 
 def _settings(**overrides: object) -> SimpleNamespace:

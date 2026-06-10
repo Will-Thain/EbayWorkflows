@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ebay_workflows.services.progress_report import (
+from ebay_workflows.operations.progress_report import (
     ProgressSnapshot,
     format_progress_label,
     parse_progress_line,

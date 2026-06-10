@@ -1,79 +1,96 @@
 # Implementation Specification
 
-**Status:** Phases 1–6 and GUI **[Shipped]** on `main`. Tags: `documentation-status.md`.
+**Status:** Phases 1–6, GUI, and ADR 0002 package layout **[Shipped]**. Tags: `documentation-status.md`.
 
 ## Objective
 
-Concrete module layout and build order for the local CLI + PostgreSQL workflow engine, including image-assisted matching and strict verification gates.
+Concrete module layout and build order for the local CLI + PostgreSQL workflow engine, with **mtg-card-recognition v0.3.2** as the image cascade library and EbayWorkflows owning workflow integration.
 
-## Delivered Scope
+## Delivered scope
 
 - local CLI workflow runner (`ebay-workflows`)
-- PostgreSQL-backed persistence with workflow run/step traceability
-- Phase 1: eBay ingest + image cache
-- Phase 2: Scryfall title matching (top-K candidates)
-- Phase 3: Cardmarket bulk price join
-- Phase 4: hybrid EV/confidence ranking + export
-- Phase 5: zone OCR, embeddings, strict verification gate, provenance attach
-- Phase 6: bulk-lot multi-card detection and lot scoring
-- Desktop GUI (PySide6): Opportunities, Workflows, Database, Home, Schedules
-- Extractable recognition library: **`mtg-card-recognition`** sibling repo (import `mtg_card_recognition`)
+- PostgreSQL persistence with workflow run/step traceability
+- Phases 1–6 + resumable pipeline (`pipeline_resume.py`)
+- Desktop GUI (PySide6) — subprocess phases only
+- Sibling library **`mtg-card-recognition`** (import `mtg_card_recognition` only from `recognition/` + `adapters/`)
 
-## Module Layout (actual)
+Production phase order: **Phase 2 → 5 → 3 → 6 → 4**.
+
+## Module layout (canonical)
 
 ```text
-src/
-  ebay_workflows/
-    cli.py                       # Command handlers
-    config.py                    # Settings (env parsing)
-    workflow_phase{1..6}.py      # Phase executors
-    pipeline_resume.py           # Resumable pipeline
-    adapters/recognition_settings.py  # Settings → RecognitionSettings
-    integrations/                # ebay, scryfall, cardmarket, cardmarket_bulk
-    services/                    # Shims + eBay-specific (ranked_export, ev_guardrails, …)
-    gui/                         # PySide6 desktop app
-    scheduler.py                 # Headless due-job dispatch
-    models.py, db.py
-../mtg-card-recognition/         # Sibling repo: mtg_card_recognition package (git clone)
-tests/                           # Unit + integration tests (112+ passing)
-scripts/install-dev.ps1          # pip install -e sibling + ebay-workflows[dev]
+src/ebay_workflows/
+  workflows/                   # phase1..6 executors, catalog, resume entrypoints
+  recognition/                 # ONLY mtg_card_recognition imports
+    phase5_analysis.py         # analyze_listing_image wrapper
+    cascade_persist.py, catalog_index.py, embedding_index.py, …
+  candidates/                  # row policy (gate, attach, sync, selection)
+  scoring/                     # hybrid_scoring, ev_guardrails, currency
+  operations/                  # lock, health, export, progress, sample scope
+  persistence/                 # session, models re-export, repositories
+  integrations/                # ebay, scryfall, cardmarket HTTP
+  adapters/                    # Settings ↔ RecognitionSettings
+  cli/
+  gui/
+  models.py                    # canonical SQLAlchemy ORM definitions
+  db.py                        # compat shim → persistence.session (Alembic CLI paths)
+  persistence/models.py        # re-exports models.py for Alembic env.py
+  config.py, pipeline_resume.py
 ```
 
-Legacy doc references to `src/cli/`, `src/matching/`, or in-tree `src/mtg_card_recognition/` are **[Historical]** — recognition code lives in the sibling repo; eBay logic under `ebay_workflows`.
+**Import rule:** only `recognition/` and `adapters/` may `import mtg_card_recognition`. CI: `tests/test_import_boundaries.py`.
 
-## Build Order (as implemented)
+## Contributor doc map
 
-1. Bootstrap project, config, DB models, workflow runner skeleton
-2. eBay connector + image cache + Phase 1
-3. Scryfall sync + Phase 2 title match
-4. Cardmarket bulk download/sync + Phase 3
-5. OpenCLIP + FAISS index build; Phase 5 zone pipeline + verification gate
-6. Phase 4 hybrid scoring + guardrails + ranked export
-7. Phase 6 bulk lot detection + lot scoring
-8. Extract `mtg_card_recognition`; wire shims and P0 verification fixes
-9. GUI (Opportunities → Database → Workflows → Schedules)
-10. Operational scripts (`run-live-pipeline.ps1`, `reanalyze-matching.ps1`, large ingest)
+See `contributing-docs.md` for “code change → doc to edit”. Quick reference:
 
-Production phase order in scripts: **Phase 2 → 5 → 3 → 6 → 4** (price join after image verification).
+| Code area | Primary docs |
+|-----------|--------------|
+| `workflows/phase*` | `workflow-phases.md`, `architecture.md` |
+| `recognition/` | `card-recognition-architecture.md`, sibling `integration/ebay-workflows.md` |
+| `candidates/` | `data-dictionary.md`, `trust-invariants.md`, `ranking-and-confidence.md` |
+| `scoring/` | `ranking-and-confidence.md`, `product-requirements.md` |
+| `persistence/` | `data-model.md`, `data-dictionary.md` |
+| `operations/` | `runbook-local.md`, `testing-strategy.md` |
+| `gui/` | `gui-application.md` (no in-process CV) |
+| Package layout | `adr/0002-package-restructure.md`, `architecture.md` |
 
-## API Safety Requirements (Mandatory) **[Shipped]**
+## Build order (historical)
 
-- all provider requests pass through shared rate-limit guard
-- retries respect provider policy with exponential backoff + jitter
-- no endpoint queried without explicit permission in provider terms
-- Cardmarket uses permitted downloadable bulk files with checksum/source metadata
-- `validate-env` and `ebay-auth-check` for startup health
+1. Bootstrap, config, DB, phases 1–4 **[Shipped]**
+2. Phase 5/6 + FAISS + extract library **[Shipped]**
+3. Library v0.3.2 — consumer owns row policy **[Shipped]**
+4. ADR 0002 M1–M7 — layered packages, repositories, no `services/` shims **[Shipped]**
 
-## Definition of Done
+## API safety **[Shipped]**
 
-- CLI runs phases 1–6 against configured query with resumable checkpoints
-- run status and errors persisted; partial reruns safe
-- ranked output with explainable EV/confidence and verification provenance
-- API calls within configured limits; pipeline single-run lock optional
-- GUI previews matches with verification source and proof detection highlight
+- shared rate-limit guard; retry with backoff
+- Cardmarket bulk only with provenance metadata
+- `validate-env`, `ebay-auth-check`
+
+## Definition of done
+
+- CLI runs phases 1–6 with resumable checkpoints
+- ranked output with verification provenance
+- GUI previews matches without in-process CV
+- import boundary: only `recognition/` + `adapters/` touch `mtg_card_recognition`
 
 ## Related docs
 
-- `card-recognition-architecture.md` — verification spec and package boundaries
-- `workflow-phases.md` — per-phase acceptance criteria
-- `gui-application.md` — desktop app spec (implemented)
+- `architecture.md` — component diagram
+- `card-recognition-architecture.md` — Phase 5 sequence
+- `adr/0002-package-restructure.md` — restructure record
+- `workflow-phases.md` — acceptance criteria
+- `trust-invariants.md` — verification policy summary
+
+## [Historical] Pre–ADR 0002 layout
+
+Before 2026-06-10, phase executors lived at repo root (`workflow_phase*.py`) and row policy lived under `services/candidate_*`. **`services/` package removed in M7** — do not restore.
+
+```text
+# [Historical] — do not use
+workflow_phase{1..6}.py
+services/candidate_*, image_analysis, hybrid_scoring, …
+```
+
+Migration record: `expert-panel/reviews/ebay-restructure-v1.md`, milestones in `adr/0002-package-restructure.md`.

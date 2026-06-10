@@ -51,7 +51,7 @@ Singles (Phase 5) and bulk lot crops (Phase 6) require **image evidence** before
 | Set symbol template | yes | yes | **[Shipped]** strong verify path |
 | Mana colors (zone) | yes | yes | **[Shipped]** supporting / tie-breaker only |
 
-**Shipped [Shipped]:** one printing per listing for pricing/EV (`select_pricing_candidate`); strict gate in `mtg_card_recognition.evidence`; provenance on attach.
+**Shipped [Shipped]:** one printing per listing for pricing/EV (`candidate_selection.select_pricing_candidate`); Tier 8 gate in library + row policy in `candidates/candidate_gate`; provenance on attach.
 
 **Historical [Historical]:** OR gate verified on any one signal; Phase 4 summed multiple verified top-K prices.
 

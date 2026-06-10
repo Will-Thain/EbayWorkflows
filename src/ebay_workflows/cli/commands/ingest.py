@@ -8,12 +8,12 @@ from ebay_workflows.cli.bootstrap import app, console
 from ebay_workflows.cli_context import cli_session, load_settings
 from ebay_workflows.exceptions import EbayWorkflowsError
 
-from ebay_workflows.services.ingest_helpers import resolve_max_pages
-from ebay_workflows.workflow_phase1 import retry_failed_image_downloads, run_phase1
+from ebay_workflows.operations.ingest_helpers import resolve_max_pages
+from ebay_workflows.workflows.phase1 import retry_failed_image_downloads, run_phase1
 from ebay_workflows.integrations.scryfall import sync_scryfall_bulk
-from ebay_workflows.workflow_phase2 import upsert_scryfall_cards
+from ebay_workflows.workflows.phase2 import upsert_scryfall_cards
 from ebay_workflows.integrations.cardmarket import load_cardmarket_bulk_rows
-from ebay_workflows.workflow_phase3 import sync_cardmarket_prices
+from ebay_workflows.workflows.phase3 import sync_cardmarket_prices
 from ebay_workflows.integrations.cardmarket_bulk import download_and_build_singles_csv
 
 @app.command("run")

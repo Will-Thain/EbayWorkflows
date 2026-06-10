@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ebay_workflows.models import Base, Listing, ListingCardCandidate, ScryfallCard
-from ebay_workflows.services.embedding_index import EmbeddingMatch, propose_embedding_candidates
+from ebay_workflows.recognition.embedding_index import EmbeddingMatch, propose_embedding_candidates
 
 
 def test_propose_embedding_inserts_when_missing_from_title_matches() -> None:

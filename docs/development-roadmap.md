@@ -50,7 +50,7 @@ Exit criteria:
 - OpenCV preprocessing, card alignment, zone strips
 - Tesseract zone OCR **[Shipped]**; PaddleOCR **[Future]**
 - OpenCLIP embedding + FAISS retrieval; optional `FAISS_PROPOSE_CANDIDATES`
-- **`mtg_card_recognition` strict consensus gate** — OCR/FAISS/mana never alone verify
+- **Library Tier 8 cascade gate** + **consumer row policy** (`candidates/candidate_gate`) — OCR/FAISS/mana never alone verify
 - provenance attach (`verification_*` fields); per-listing single verified winner
 
 Exit criteria:
@@ -78,15 +78,30 @@ Exit criteria:
 
 See `gui-application.md` and `gui-build-prerequisites.md`.
 
-## Milestone 7: Recognition package extraction **[Shipped]** (standalone repo ready)
+## Milestone 7: Recognition package extraction **[Shipped]**
 
-- **`mtg-card-recognition`** — sibling repo [`../mtg-card-recognition`](https://github.com/Will-Thain/mtg-card-recognition) (v0.2.0+), FAISS core extracted
-- eBay shims + `RecognitionSettings` adapter remain in EbayWorkflows
+- **`mtg-card-recognition`** — sibling repo [`../mtg-card-recognition`](https://github.com/Will-Thain/mtg-card-recognition) (v0.3.2+), workflow integration removed from library (serialize-only in `evidence/`)
+- `RecognitionSettings` adapter in `adapters/`; EbayWorkflows owns candidate row policy
 - Dev install: `scripts/install-dev.ps1` (editable sibling clone, not a pyproject path dep)
-- Remote: https://github.com/Will-Thain/mtg-card-recognition
 
 Exit criteria:
-- tests pass against package imports; push to remote per mtg-card-recognition README **[Ready]**
+- tests pass against package imports; integration spec in mtg-card-recognition `docs/integration/ebay-workflows.md`
+
+## Package restructure (ADR 0002) **[Shipped]** M1–M7
+
+After library v0.3.2 removed eBay integration shims, consumer layout migrated incrementally:
+
+| Milestone | Scope | Status |
+|-----------|--------|--------|
+| M1 | Docs, settings adapter, import-boundary CI, Phase 5 single attach path | **[Shipped]** |
+| M2 | `recognition/phase5_analysis`; ban direct library imports outside `recognition/` + `adapters/` | **[Shipped]** |
+| M3 | `candidates/` package from `services/candidate_*` | **[Shipped]** |
+| M4 | `workflows/` thin phases; shared CLI/GUI catalog | **[Shipped]** |
+| M5 | `scoring/`, `operations/` split | **[Shipped]** |
+| M6 | Repositories + Alembic | **[Shipped]** |
+| M7 | Remove `services/` shims | **[Shipped]** |
+
+See `adr/0002-package-restructure.md`, `expert-panel/reviews/ebay-restructure-v1.md`.
 
 ## Testing Strategy
 

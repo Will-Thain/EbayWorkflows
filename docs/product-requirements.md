@@ -16,6 +16,13 @@ Build a local CLI + PostgreSQL workflow engine that:
 4. computes expected value (EV) with confidence,
 5. outputs ranked opportunities for operator review.
 
+## Architecture scope (v0.3.2+)
+
+- **mtg-card-recognition** — image cascade, Tier 8 proposal gate, serialization only
+- **EbayWorkflows** — ingest, Postgres, candidate row policy (`candidates/`), scoring, GUI, eBay/Scryfall/Cardmarket integrations
+
+See `architecture.md`, `card-recognition-architecture.md`, `adr/0002-package-restructure.md`.
+
 ## Intended Users
 
 - Individual card arbitrage traders
@@ -40,7 +47,7 @@ Build a local CLI + PostgreSQL workflow engine that:
 - Local PostgreSQL persistence
 - eBay listing metadata + image URL ingestion
 - local image caching and processing pipeline
-- hybrid title/OCR/embedding-driven Scryfall matching via `mtg_card_recognition` library
+- hybrid title/OCR/embedding-driven Scryfall matching: library cascade + EbayWorkflows `recognition/` and `candidates/` row policy
 - Cardmarket bulk-price-file joins
 - EV and confidence scoring
 - ranking output for operator decision making

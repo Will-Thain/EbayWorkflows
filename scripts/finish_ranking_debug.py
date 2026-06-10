@@ -25,8 +25,8 @@ try:
     log("load_settings")
     settings = load_settings(action="debug")
     log("settings ok")
-    log("import workflow_phase4")
-    from ebay_workflows.workflow_phase4 import run_phase4_ranking
+    log("import workflows.phase4")
+    from ebay_workflows.workflows.phase4 import run_phase4_ranking
     log("phase4 import ok")
     log("run phase4")
     with cli_session(action="phase4 rank", settings=settings) as (_, session):

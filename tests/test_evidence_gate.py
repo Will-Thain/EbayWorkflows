@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from ebay_workflows.adapters.recognition_settings import coerce_recognition_settings
 from ebay_workflows.config import Settings
-from ebay_workflows.services.candidate_gate import (
+from ebay_workflows.candidates.candidate_gate import (
     apply_image_evidence_gate,
     evaluate_image_verification,
 )
@@ -80,6 +80,27 @@ def test_cascade_verified_set_collector_honored() -> None:
         "pricing_eligible": True,
         "verification_source": "set_collector",
         "zone_evidence": {"bottom_parsed": {"set_code": "lea", "collector_number": "1"}},
+    }
+    verified, source, strength = evaluate_image_verification(
+        evidence,
+        "card-1",
+        settings,
+        scryfall_card=card,
+    )
+    assert verified is True
+    assert source == "set_collector"
+    assert strength == 30
+
+
+def test_no_gate_status_pre_cascade_rows_still_evaluate() -> None:
+    """Rows without cascade attach fields (pre-reanalyze DB) use zone heuristics."""
+    settings = _recognition()
+    card = _card()
+    evidence = {
+        "zone_evidence": {
+            "bottom_parsed": {"set_code": "lea", "collector_number": "1"},
+            "name_ocr": "Sol Ring",
+        }
     }
     verified, source, strength = evaluate_image_verification(
         evidence,

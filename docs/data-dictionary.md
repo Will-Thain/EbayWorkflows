@@ -28,7 +28,7 @@ Provide clear semantic definitions for key persisted fields and provenance requi
 
 ### `evidence_json` — image verification (Phase 5)
 
-Set by `mtg_card_recognition.evidence` and Phase 5 attach logic:
+Set by **EbayWorkflows `candidates/`** row policy (`candidate_gate`, `candidate_sync`, `candidate_attach`) after library cascade Tier 8; serialized fields from `mtg_card_recognition.evidence.serialize`:
 
 | Field | Type | Meaning |
 |-------|------|---------|

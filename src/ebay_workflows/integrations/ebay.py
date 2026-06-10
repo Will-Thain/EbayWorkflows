@@ -12,8 +12,8 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from ..config import Settings
 from ..exceptions import AuthenticationError, ConfigurationError, RateLimitError, TransientIntegrationError
-from ..services.ingest_helpers import EBAY_BROWSE_MAX_OFFSET
-from ..services.rate_limit import wait_global_http
+from ..operations.ingest_helpers import EBAY_BROWSE_MAX_OFFSET
+from ..operations.rate_limit import wait_global_http
 from .http_errors import raise_for_http_response
 
 EBAY_PROVIDER = "eBay"

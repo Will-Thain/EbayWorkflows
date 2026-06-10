@@ -6,7 +6,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt  # noqa: E402
 
 from ebay_workflows.gui.models_qt import RankedListTableModel  # noqa: E402
-from ebay_workflows.services.ranked_export import RankedListingRow
+from ebay_workflows.operations.ranked_export import RankedListingRow
 
 
 def _sample_row(**kwargs) -> RankedListingRow:

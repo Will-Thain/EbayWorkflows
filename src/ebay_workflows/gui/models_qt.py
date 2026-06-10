@@ -5,7 +5,7 @@ from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QSize
 from PySide6.QtGui import QPixmap
 
-from ..services.ranked_export import RankedListingRow
+from ..operations.ranked_export import RankedListingRow
 from .presenters import truncate_title
 
 
